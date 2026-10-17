@@ -32,9 +32,7 @@ struct ContentView: View {
             FullScreenAndroidView(
                 video: video,
                 transport: transport,
-                onClose: {
-                    showFullScreen = false
-                }
+                onClose: { showFullScreen = false }
             )
         }
     }
@@ -62,11 +60,7 @@ struct ContentView: View {
                     return
                 }
 
-                transport.connect(
-                    host: host,
-                    port: p,
-                    token: token
-                )
+                transport.connect(host: host, port: p, token: token)
             }
             .buttonStyle(.borderedProminent)
 
@@ -97,11 +91,7 @@ struct ContentView: View {
                 }
 
                 videoInputError = ""
-                video.connect(
-                    host: host,
-                    port: p,
-                    token: token
-                )
+                video.connect(host: host, port: p, token: token)
             }
             .buttonStyle(.borderedProminent)
 
@@ -118,7 +108,7 @@ struct ContentView: View {
                 GeometryReader { geometry in
                     Image(uiImage: image)
                         .resizable()
-                        .scaledToFit()
+                        .aspectRatio(contentMode: .fit)
                         .frame(
                             width: geometry.size.width,
                             height: geometry.size.height
@@ -127,7 +117,11 @@ struct ContentView: View {
                         .gesture(
                             DragGesture(minimumDistance: 0)
                                 .onEnded { value in
-                                    sendGesture(value, size: geometry.size)
+                                    sendGesture(
+                                        value,
+                                        size: geometry.size,
+                                        fill: false
+                                    )
                                 }
                         )
                 }
@@ -283,11 +277,20 @@ struct ContentView: View {
 
     private func sendGesture(
         _ value: DragGesture.Value,
-        size: CGSize
+        size: CGSize,
+        fill: Bool
     ) {
         guard transport.isAuthenticated,
-              let start = androidPoint(value.startLocation, size: size),
-              let end = androidPoint(value.location, size: size) else {
+              let start = androidPoint(
+                value.startLocation,
+                size: size,
+                fill: fill
+              ),
+              let end = androidPoint(
+                value.location,
+                size: size,
+                fill: fill
+              ) else {
             return
         }
 
@@ -316,7 +319,8 @@ struct ContentView: View {
 
     private func androidPoint(
         _ point: CGPoint,
-        size: CGSize
+        size: CGSize,
+        fill: Bool
     ) -> (x: Int, y: Int)? {
         guard video.width > 0,
               video.height > 0,
@@ -328,14 +332,14 @@ struct ContentView: View {
         let sourceWidth = CGFloat(video.width)
         let sourceHeight = CGFloat(video.height)
 
-        let scale = min(
-            size.width / sourceWidth,
-            size.height / sourceHeight
-        )
+        let widthScale = size.width / sourceWidth
+        let heightScale = size.height / sourceHeight
+        let scale = fill
+            ? max(widthScale, heightScale)
+            : min(widthScale, heightScale)
 
         let renderedWidth = sourceWidth * scale
         let renderedHeight = sourceHeight * scale
-
         let offsetX = (size.width - renderedWidth) / 2
         let offsetY = (size.height - renderedHeight) / 2
 
@@ -365,19 +369,26 @@ private struct FullScreenAndroidView: View {
                 Color.black
                     .ignoresSafeArea()
 
+                // Phóng video lấp đầy toàn bộ màn hình.
+                // Nếu tỷ lệ Android và iPhone khác nhau,
+                // phần dư sẽ bị cắt thay vì để video nhỏ ở giữa.
                 if let image = video.image {
                     Image(uiImage: image)
                         .resizable()
-                        .scaledToFit()
+                        .aspectRatio(contentMode: .fill)
                         .frame(
                             width: geometry.size.width,
                             height: geometry.size.height
                         )
+                        .clipped()
                         .contentShape(Rectangle())
                         .gesture(
                             DragGesture(minimumDistance: 0)
                                 .onEnded { value in
-                                    sendGesture(value, size: geometry.size)
+                                    sendGesture(
+                                        value,
+                                        size: geometry.size
+                                    )
                                 }
                         )
                 } else {
@@ -385,11 +396,12 @@ private struct FullScreenAndroidView: View {
                         ProgressView()
                             .tint(.white)
 
-                        Text("Đang chờ hình ảnh Android…")
+                        Text("Đang chờ hình ảnh Android...")
                             .foregroundColor(.white)
                     }
                 }
 
+                // Thanh điều khiển nằm phía trên video.
                 VStack {
                     HStack {
                         Button(action: onClose) {
@@ -464,8 +476,14 @@ private struct FullScreenAndroidView: View {
         size: CGSize
     ) {
         guard transport.isAuthenticated,
-              let start = androidPoint(value.startLocation, size: size),
-              let end = androidPoint(value.location, size: size) else {
+              let start = androidPoint(
+                value.startLocation,
+                size: size
+              ),
+              let end = androidPoint(
+                value.location,
+                size: size
+              ) else {
             return
         }
 
@@ -492,6 +510,7 @@ private struct FullScreenAndroidView: View {
         }
     }
 
+    // Ánh xạ tọa độ theo chế độ fill, có tính cả phần ảnh bị cắt.
     private func androidPoint(
         _ point: CGPoint,
         size: CGSize
@@ -506,7 +525,7 @@ private struct FullScreenAndroidView: View {
         let sourceWidth = CGFloat(video.width)
         let sourceHeight = CGFloat(video.height)
 
-        let scale = min(
+        let scale = max(
             size.width / sourceWidth,
             size.height / sourceHeight
         )
