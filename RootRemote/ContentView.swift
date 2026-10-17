@@ -279,6 +279,7 @@ private struct RemoteScreen: View {
     @State private var hasInitialBubblePosition = false
 
     private let bubbleSize: CGFloat = 42
+    private let dragThreshold: CGFloat = 10
 
     private var targetResolution: (width: Int, height: Int) {
         let portrait = video.height >= video.width
@@ -419,6 +420,9 @@ private struct RemoteScreen: View {
         }
     }
 
+    // Chạm nhanh mở menu. Kéo chỉ di chuyển bong bóng.
+    // Không dùng Button kết hợp simultaneousGesture để tránh
+    // việc thả tay sau khi kéo vẫn kích hoạt nút.
     private func floatingBubble(in viewport: CGSize) -> some View {
         let x = hasInitialBubblePosition
             ? bubblePosition.x
@@ -428,77 +432,77 @@ private struct RemoteScreen: View {
             ? bubblePosition.y
             : viewport.height * 0.55
 
-        return Button {
-            showFloatingMenu = true
-        } label: {
-            Image(systemName: "gearshape.fill")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: bubbleSize, height: bubbleSize)
-                .background {
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .overlay {
-                            Circle()
-                                .fill(Color.cyan.opacity(0.28))
-                        }
-                        .overlay {
-                            Circle()
-                                .stroke(
-                                    .white.opacity(0.55),
-                                    lineWidth: 1
-                                )
-                        }
-                }
-                .shadow(
-                    color: .black.opacity(0.35),
-                    radius: 6,
-                    y: 2
-                )
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .position(x: x, y: y)
-        .simultaneousGesture(
-            DragGesture(
-                minimumDistance: 10,
-                coordinateSpace: .named("remoteScreen")
+        return Image(systemName: "gearshape.fill")
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: bubbleSize, height: bubbleSize)
+            .background {
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .overlay {
+                        Circle()
+                            .fill(Color.cyan.opacity(0.28))
+                    }
+                    .overlay {
+                        Circle()
+                            .stroke(
+                                .white.opacity(0.55),
+                                lineWidth: 1
+                            )
+                    }
+            }
+            .shadow(
+                color: .black.opacity(0.35),
+                radius: 6,
+                y: 2
             )
-            .onChanged { value in
-                if !hasInitialBubblePosition {
-                    setInitialBubblePosition(in: viewport)
-                }
-
-                if bubbleDragStart == nil {
-                    bubbleDragStart = bubblePosition
-                }
-
-                guard let start = bubbleDragStart else {
-                    return
-                }
-
-                bubblePosition = clamp(
-                    CGPoint(
-                        x: start.x + value.translation.width,
-                        y: start.y + value.translation.height
-                    ),
-                    in: viewport
+            .contentShape(Circle())
+            .position(x: x, y: y)
+            .gesture(
+                DragGesture(
+                    minimumDistance: dragThreshold,
+                    coordinateSpace: .named("remoteScreen")
                 )
-            }
-            .onEnded { value in
-                let distance = hypot(
-                    value.translation.width,
-                    value.translation.height
-                )
+                .onChanged { value in
+                    if !hasInitialBubblePosition {
+                        setInitialBubblePosition(in: viewport)
+                    }
 
-                bubbleDragStart = nil
+                    if bubbleDragStart == nil {
+                        bubbleDragStart = bubblePosition
+                    }
 
-                if distance >= 10 {
-                    snapBubbleToNearestSide(in: viewport)
+                    guard let start = bubbleDragStart else {
+                        return
+                    }
+
+                    bubblePosition = clamp(
+                        CGPoint(
+                            x: start.x + value.translation.width,
+                            y: start.y + value.translation.height
+                        ),
+                        in: viewport
+                    )
                 }
-            }
-        )
-        .accessibilityLabel("Mở menu RootRemote")
+                .onEnded { value in
+                    let distance = hypot(
+                        value.translation.width,
+                        value.translation.height
+                    )
+
+                    if distance >= dragThreshold {
+                        // Kéo xong, dạt về cạnh gần nhất.
+                        snapBubbleToNearestSide(in: viewport)
+                    } else {
+                        // Không kéo đáng kể: coi là chạm.
+                        showFloatingMenu = true
+                    }
+
+                    bubbleDragStart = nil
+                }
+            )
+            .accessibilityElement()
+            .accessibilityLabel("Mở menu RootRemote")
     }
 
     private func setInitialBubblePosition(in size: CGSize) {
@@ -539,12 +543,14 @@ private struct RemoteScreen: View {
         let leftX = bubbleSize / 2 + 8
         let rightX = size.width - bubbleSize / 2 - 8
 
-        bubblePosition = CGPoint(
-            x: abs(current.x - leftX) < abs(current.x - rightX)
-                ? leftX
-                : rightX,
-            y: current.y
-        )
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+            bubblePosition = CGPoint(
+                x: abs(current.x - leftX) < abs(current.x - rightX)
+                    ? leftX
+                    : rightX,
+                y: current.y
+            )
+        }
     }
 
     private var settingsSheet: some View {
