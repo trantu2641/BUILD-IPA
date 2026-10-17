@@ -111,9 +111,12 @@ struct ContentView: View {
                             Image(systemName: "lock.fill")
                                 .foregroundStyle(.cyan)
 
-                            SecureField("Mật khẩu kết nối", text: $password)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
+                            SecureField(
+                                "Mật khẩu kết nối",
+                                text: $password
+                            )
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
                         }
                         .padding(15)
                         .background(.white.opacity(0.07))
@@ -271,10 +274,11 @@ private struct RemoteScreen: View {
     @State private var isApplyingResolution = false
     @State private var resolutionMessage = ""
 
-    @State private var bubblePosition = CGPoint(x: 0, y: 0)
+    @State private var bubblePosition = CGPoint.zero
+    @State private var bubbleDragStart: CGPoint?
     @State private var hasInitialBubblePosition = false
 
-    private let bubbleSize: CGFloat = 54
+    private let bubbleSize: CGFloat = 42
 
     private var targetResolution: (width: Int, height: Int) {
         let portrait = video.height >= video.width
@@ -373,10 +377,11 @@ private struct RemoteScreen: View {
                         )
                 }
 
-                // Một bong bóng nổi duy nhất trong chế độ điều khiển.
                 floatingBubble(in: viewport)
+                    .zIndex(10)
             }
             .frame(width: viewport.width, height: viewport.height)
+            .coordinateSpace(name: "remoteScreen")
             .clipped()
             .onAppear {
                 setInitialBubblePosition(in: viewport)
@@ -389,12 +394,19 @@ private struct RemoteScreen: View {
                 isPresented: $showFloatingMenu,
                 titleVisibility: .visible
             ) {
-                Button("Cài đặt", systemImage: "gearshape.fill") {
+                Button {
                     showSettings = true
+                } label: {
+                    Label("Cài đặt", systemImage: "gearshape.fill")
                 }
 
-                Button("Thoát kết nối", systemImage: "xmark.circle.fill", role: .destructive) {
+                Button(role: .destructive) {
                     onDisconnect()
+                } label: {
+                    Label(
+                        "Thoát kết nối",
+                        systemImage: "xmark.circle.fill"
+                    )
                 }
 
                 Button("Hủy", role: .cancel) {}
@@ -410,60 +422,83 @@ private struct RemoteScreen: View {
     private func floatingBubble(in viewport: CGSize) -> some View {
         let x = hasInitialBubblePosition
             ? bubblePosition.x
-            : viewport.width - bubbleSize / 2 - 18
+            : viewport.width - bubbleSize / 2 - 16
 
         let y = hasInitialBubblePosition
             ? bubblePosition.y
-            : viewport.height * 0.5
+            : viewport.height * 0.55
 
-        return Image(systemName: "ellipsis")
-            .font(.system(size: 23, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: bubbleSize, height: bubbleSize)
-            .background {
-                Circle()
-                    .fill(.ultraThinMaterial)
-                    .overlay {
-                        Circle()
-                            .fill(Color.cyan.opacity(0.28))
-                    }
-                    .overlay {
-                        Circle()
-                            .stroke(.white.opacity(0.55), lineWidth: 1)
-                    }
-            }
-            .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
-            .contentShape(Circle())
-            .position(x: x, y: y)
-            .gesture(
-                DragGesture(minimumDistance: 4)
-                    .onChanged { value in
-                        if !hasInitialBubblePosition {
-                            setInitialBubblePosition(in: viewport)
+        return Button {
+            showFloatingMenu = true
+        } label: {
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: bubbleSize, height: bubbleSize)
+                .background {
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .overlay {
+                            Circle()
+                                .fill(Color.cyan.opacity(0.28))
                         }
-
-                        bubblePosition = clamp(
-                            CGPoint(
-                                x: value.location.x,
-                                y: value.location.y
-                            ),
-                            in: viewport
-                        )
-                    }
-                    .onEnded { value in
-                        let distance = hypot(
-                            value.translation.width,
-                            value.translation.height
-                        )
-
-                        if distance < 8 {
-                            showFloatingMenu = true
-                        } else {
-                            snapBubbleToNearestSide(in: viewport)
+                        .overlay {
+                            Circle()
+                                .stroke(
+                                    .white.opacity(0.55),
+                                    lineWidth: 1
+                                )
                         }
-                    }
+                }
+                .shadow(
+                    color: .black.opacity(0.35),
+                    radius: 6,
+                    y: 2
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .position(x: x, y: y)
+        .simultaneousGesture(
+            DragGesture(
+                minimumDistance: 10,
+                coordinateSpace: .named("remoteScreen")
             )
-            .accessibilityLabel("Mở menu RootRemote")
+            .onChanged { value in
+                if !hasInitialBubblePosition {
+                    setInitialBubblePosition(in: viewport)
+                }
+
+                if bubbleDragStart == nil {
+                    bubbleDragStart = bubblePosition
+                }
+
+                guard let start = bubbleDragStart else {
+                    return
+                }
+
+                bubblePosition = clamp(
+                    CGPoint(
+                        x: start.x + value.translation.width,
+                        y: start.y + value.translation.height
+                    ),
+                    in: viewport
+                )
+            }
+            .onEnded { value in
+                let distance = hypot(
+                    value.translation.width,
+                    value.translation.height
+                )
+
+                bubbleDragStart = nil
+
+                if distance >= 10 {
+                    snapBubbleToNearestSide(in: viewport)
+                }
+            }
+        )
+        .accessibilityLabel("Mở menu RootRemote")
     }
 
     private func setInitialBubblePosition(in size: CGSize) {
