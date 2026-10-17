@@ -22,7 +22,7 @@ struct ContentView: View {
     private var videoQuality = "720p"
 
     @AppStorage("rootremote.displayMode")
-    private var displayMode = "blackBars"
+    private var displayMode = "fillCrop"
 
     @State private var password = ""
     @State private var isConnecting = false
@@ -268,15 +268,21 @@ private struct RemoteScreen: View {
     private var audioEnabled = false
 
     @State private var showSettings = false
+    @State private var isApplyingResolution = false
+    @State private var resolutionMessage = ""
 
     private var targetResolution: (width: Int, height: Int) {
+        // Giữ hướng của luồng hiện tại, không mặc định Android
+        // luôn là màn hình ngang.
+        let portrait = video.height >= video.width
+
         switch videoQuality {
         case "480p":
-            return (854, 480)
+            return portrait ? (480, 854) : (854, 480)
         case "1080p":
-            return (1920, 1080)
+            return portrait ? (1080, 1920) : (1920, 1080)
         default:
-            return (1280, 720)
+            return portrait ? (720, 1280) : (1280, 720)
         }
     }
 
@@ -292,16 +298,37 @@ private struct RemoteScreen: View {
                     let sourceW = CGFloat(max(video.width, 1))
                     let sourceH = CGFloat(max(video.height, 1))
 
-                    // Luôn dùng toàn bộ chiều rộng màn hình iPhone.
-                    let drawnW = viewport.width
+                    let scale: CGFloat = {
+                        switch displayMode {
+                        case "stretch":
+                            return 1
+                        case "fit", "blackBars":
+                            return min(
+                                viewport.width / sourceW,
+                                viewport.height / sourceH
+                            )
+                        default:
+                            // fillCrop: lấp kín khung, chấp nhận cắt
+                            // phần ảnh vượt khỏi mép màn hình.
+                            return max(
+                                viewport.width / sourceW,
+                                viewport.height / sourceH
+                            )
+                        }
+                    }()
 
-                    // blackBars giữ tỉ lệ; stretch lấp đầy cả khung.
-                    let drawnH: CGFloat = displayMode == "stretch"
+                    let drawnW: CGFloat =
+                        displayMode == "stretch"
+                        ? viewport.width
+                        : sourceW * scale
+
+                    let drawnH: CGFloat =
+                        displayMode == "stretch"
                         ? viewport.height
-                        : viewport.width * sourceH / sourceW
+                        : sourceH * scale
 
                     let imageRect = CGRect(
-                        x: 0,
+                        x: (viewport.width - drawnW) / 2,
                         y: (viewport.height - drawnH) / 2,
                         width: drawnW,
                         height: drawnH
@@ -310,16 +337,19 @@ private struct RemoteScreen: View {
                     Image(uiImage: image)
                         .resizable()
                         .interpolation(.high)
-                        .frame(
-                            width: drawnW,
-                            height: drawnH
-                        )
-                        .clipped()
+                        .frame(width: drawnW, height: drawnH)
                         .position(
                             x: viewport.width / 2,
                             y: viewport.height / 2
                         )
+                        .frame(
+                            width: viewport.width,
+                            height: viewport.height
+                        )
+                        .clipped()
 
+                    // Lớp nhận thao tác chạm nằm trên hình video.
+                    // Toạ độ được quy đổi về kích thước luồng Android.
                     Color.clear
                         .contentShape(Rectangle())
                         .frame(
@@ -352,6 +382,8 @@ private struct RemoteScreen: View {
                     }
                 }
 
+                // Thanh trạng thái phía trên, không chiếm chiều rộng
+                // của vùng video.
                 VStack {
                     HStack(spacing: 8) {
                         Circle()
@@ -379,7 +411,7 @@ private struct RemoteScreen: View {
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundStyle(.white)
                                 .frame(width: 42, height: 42)
-                                .background(.black.opacity(0.65))
+                                .background(.black.opacity(0.72))
                                 .clipShape(Circle())
                         }
                         .accessibilityLabel("Cài đặt")
@@ -389,113 +421,140 @@ private struct RemoteScreen: View {
                                 .font(.system(size: 16, weight: .bold))
                                 .foregroundStyle(.white)
                                 .frame(width: 42, height: 42)
-                                .background(.black.opacity(0.65))
+                                .background(.black.opacity(0.72))
                                 .clipShape(Circle())
                         }
                         .accessibilityLabel("Ngắt kết nối")
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 6)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
 
                     Spacer()
                 }
             }
-            .frame(
-                width: viewport.width,
-                height: viewport.height
-            )
+            .frame(width: viewport.width, height: viewport.height)
             .clipped()
         }
         .ignoresSafeArea()
         .statusBarHidden(true)
         .sheet(isPresented: $showSettings) {
-            NavigationStack {
-                Form {
-                    Section("Chất lượng hình ảnh") {
-                        Picker("Độ phân giải", selection: $videoQuality) {
-                            Text("480p • Nhẹ").tag("480p")
-                            Text("720p • Cân bằng").tag("720p")
-                            Text("1080p • Nét cao").tag("1080p")
-                        }
-                        .pickerStyle(.inline)
+            settingsSheet
+        }
+    }
 
-                        LabeledContent(
-                            "Độ phân giải yêu cầu",
-                            value: "\(targetResolution.width) × \(targetResolution.height)"
-                        )
+    private var settingsSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Chất lượng hình ảnh") {
+                    Picker("Độ phân giải", selection: $videoQuality) {
+                        Text("480p • Nhẹ").tag("480p")
+                        Text("720p • Cân bằng").tag("720p")
+                        Text("1080p • Nét cao").tag("1080p")
+                    }
+                    .pickerStyle(.inline)
 
-                        LabeledContent(
-                            "Độ phân giải đang nhận",
-                            value: "\(video.width) × \(video.height)"
-                        )
+                    LabeledContent(
+                        "Độ phân giải yêu cầu",
+                        value: "\(targetResolution.width) × \(targetResolution.height)"
+                    )
 
-                        Text(
-                            "Độ phân giải yêu cầu chỉ có hiệu lực khi " +
-                            "Android agent hỗ trợ đổi kích thước luồng video."
-                        )
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    LabeledContent(
+                        "Độ phân giải đang nhận",
+                        value: "\(video.width) × \(video.height)"
+                    )
 
-                        Button("Áp dụng độ phân giải") {
-                            applyVideoResolution()
+                    Button {
+                        applyVideoResolution()
+                    } label: {
+                        HStack {
+                            if isApplyingResolution {
+                                ProgressView()
+                            }
+
+                            Text("Áp dụng độ phân giải")
+                                .fontWeight(.semibold)
                         }
                     }
+                    .disabled(isApplyingResolution || !transport.isAuthenticated)
 
-                    Section("Tỉ lệ hiển thị") {
-                        Picker("Chế độ", selection: $displayMode) {
-                            Text("Kéo dài toàn màn hình").tag("stretch")
-                            Text("Giữ tỉ lệ, nền đen").tag("blackBars")
-                        }
-                        .pickerStyle(.inline)
-
-                        Text(
-                            displayMode == "stretch"
-                            ? "Ảnh phủ kín màn hình. Hình ảnh có thể bị méo."
-                            : "Ảnh giữ nguyên tỉ lệ, chiều rộng vừa màn hình. " +
-                              "Có thể xuất hiện nền đen ở phía trên hoặc dưới."
-                        )
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    if !resolutionMessage.isEmpty {
+                        Text(resolutionMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
 
-                    Section("Âm thanh") {
-                        Toggle(
-                            "Yêu cầu âm thanh Android",
-                            isOn: $audioEnabled
-                        )
-                        .onChange(of: audioEnabled) { enabled in
-                            onAudioChanged(enabled)
-                        }
-
-                        Text(
-                            "Âm thanh chỉ hoạt động khi Android agent có " +
-                            "chức năng thu và truyền âm thanh thực tế."
-                        )
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    }
-
-                    Section("Trạng thái") {
-                        Text(transport.status)
-                        Text(video.status)
-                    }
+                    Text(
+                        "Độ phân giải đang nhận chỉ thay đổi khi module Android " +
+                        "xử lý yêu cầu và phát lại luồng video ở kích thước mới."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 }
-                .navigationTitle("Cài đặt RootRemote")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Đóng") {
-                            showSettings = false
-                        }
+
+                Section("Hiển thị màn hình") {
+                    Picker("Chế độ hiển thị", selection: $displayMode) {
+                        Text("Lấp đầy màn hình, cắt mép").tag("fillCrop")
+                        Text("Kéo giãn toàn màn hình").tag("stretch")
+                        Text("Giữ tỉ lệ, có thể có viền").tag("fit")
+                    }
+                    .pickerStyle(.inline)
+
+                    Text(displayModeDescription)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Âm thanh") {
+                    Toggle(
+                        "Yêu cầu âm thanh Android",
+                        isOn: $audioEnabled
+                    )
+                    .onChange(of: audioEnabled) { enabled in
+                        onAudioChanged(enabled)
+                    }
+
+                    Text(
+                        "Tuỳ chọn này chỉ hoạt động khi module Android " +
+                        "đã có chức năng thu và truyền âm thanh."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                }
+
+                Section("Trạng thái kết nối") {
+                    LabeledContent("Điều khiển", value: transport.status)
+                    LabeledContent("Video", value: video.status)
+                }
+            }
+            .navigationTitle("Cài đặt RootRemote")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Đóng") {
+                        showSettings = false
                     }
                 }
             }
-            .preferredColorScheme(.dark)
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private var displayModeDescription: String {
+        switch displayMode {
+        case "stretch":
+            return "Ảnh phủ kín chiều rộng và chiều cao. Có thể bị méo tỉ lệ."
+        case "fit", "blackBars":
+            return "Hiển thị toàn bộ ảnh, giữ tỉ lệ gốc. Có thể xuất hiện viền đen."
+        default:
+            return "Ảnh phủ kín màn hình iPhone. Phần vượt khỏi mép sẽ bị cắt."
         }
     }
 
     private func applyVideoResolution() {
         let resolution = targetResolution
+
+        isApplyingResolution = true
+        resolutionMessage = "Đã gửi yêu cầu \(resolution.width) × \(resolution.height)."
 
         transport.send([
             "type": "settings",
@@ -503,6 +562,21 @@ private struct RemoteScreen: View {
             "width": resolution.width,
             "height": resolution.height
         ])
+
+        // Đây chỉ là thời gian chờ phản hồi để cập nhật giao diện,
+        // không khẳng định Android đã áp dụng thành công.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            isApplyingResolution = false
+
+            if video.width == resolution.width &&
+               video.height == resolution.height {
+                resolutionMessage = "Luồng video đã dùng độ phân giải mới."
+            } else {
+                resolutionMessage =
+                    "Android chưa xác nhận độ phân giải mới. " +
+                    "Cần kiểm tra module Magisk và khởi động lại luồng video."
+            }
+        }
     }
 
     private func sendGesture(
@@ -518,10 +592,11 @@ private struct RemoteScreen: View {
         }
 
         func map(_ point: CGPoint) -> (x: Int, y: Int)? {
+            // imageRect có thể vượt khỏi khung iPhone ở chế độ fillCrop.
+            // Tính theo ảnh đã phóng, không theo khung iPhone.
             let px = point.x - imageRect.minX
             let py = point.y - imageRect.minY
 
-            // Không gửi chạm ở vùng nền đen.
             guard px >= 0,
                   py >= 0,
                   px < imageRect.width,
