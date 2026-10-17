@@ -1,4 +1,3 @@
-
 import SwiftUI
 import Security
 
@@ -265,100 +264,98 @@ private struct RemoteScreen: View {
                 Color.black
                     .ignoresSafeArea()
 
-if let image = video.image {
-    let sourceW = CGFloat(
-        max(image.cgImage?.width ?? video.width, 1)
-    )
-    let sourceH = CGFloat(
-        max(image.cgImage?.height ?? video.height, 1)
-    )
+                if let image = video.image {
+                    let sourceW = CGFloat(
+                        max(image.cgImage?.width ?? video.width, 1)
+                    )
+                    let sourceH = CGFloat(
+                        max(image.cgImage?.height ?? video.height, 1)
+                    )
 
-    let fitScale = viewport.width / sourceW
+                    let fitScale = viewport.width / sourceW
 
-    let fillScale = max(
-        viewport.width / sourceW,
-        viewport.height / sourceH
-    )
+                    let fillScale = max(
+                        viewport.width / sourceW,
+                        viewport.height / sourceH
+                    )
 
-    let drawnW: CGFloat
-    let drawnH: CGFloat
+                    let drawnW: CGFloat
+                    let drawnH: CGFloat
 
-    switch displayMode {
-    case "fit":
-        // Khớp toàn bộ chiều rộng, giữ nguyên tỷ lệ.
-        drawnW = viewport.width
-        drawnH = sourceH * fitScale
+                    switch displayMode {
+                    case "fit":
+                        // Khớp toàn bộ chiều rộng, giữ nguyên tỷ lệ.
+                        drawnW = viewport.width
+                        drawnH = sourceH * fitScale
 
-    case "stretch":
-        // Giữ nguyên chế độ kéo giãn cũ.
-        drawnW = viewport.width
-        drawnH = viewport.height
+                    case "stretch":
+                        // Giữ chế độ kéo giãn toàn màn hình.
+                        drawnW = viewport.width
+                        drawnH = viewport.height
 
-    default:
-        // Giữ nguyên chế độ lấp đầy và cắt hình cũ.
-        drawnW = sourceW * fillScale
-        drawnH = sourceH * fillScale
-    }
+                    default:
+                        // Giữ chế độ lấp đầy và cắt hình cũ.
+                        drawnW = sourceW * fillScale
+                        drawnH = sourceH * fillScale
+                    }
 
-    let imageRect = CGRect(
-        x: (viewport.width - drawnW) / 2,
-        y: (viewport.height - drawnH) / 2,
-        width: drawnW,
-        height: drawnH
-    )
+                    let imageRect = CGRect(
+                        x: (viewport.width - drawnW) / 2,
+                        y: (viewport.height - drawnH) / 2,
+                        width: drawnW,
+                        height: drawnH
+                    )
 
-    ZStack {
-        Color.black
+                    ZStack {
+                        Color.black
 
-        Image(uiImage: image)
-            .resizable()
-            .interpolation(.high)
-            .aspectRatio(
-                contentMode: .fit
-            )
-            .frame(
-                width: drawnW,
-                height: drawnH
-            )
-            .position(
-                x: viewport.width / 2,
-                y: viewport.height / 2
-            )
-    }
-    .frame(
-        width: viewport.width,
-        height: viewport.height
-    )
-    .clipped()
+                        Image(uiImage: image)
+                            .resizable()
+                            .interpolation(.high)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(
+                                width: drawnW,
+                                height: drawnH
+                            )
+                            .position(
+                                x: viewport.width / 2,
+                                y: viewport.height / 2
+                            )
+                    }
+                    .frame(
+                        width: viewport.width,
+                        height: viewport.height
+                    )
+                    .clipped()
 
-    Color.clear
-        .contentShape(Rectangle())
-        .frame(
-            width: viewport.width,
-            height: viewport.height
-        )
-        .gesture(
-            DragGesture(
-                minimumDistance: 0,
-                coordinateSpace: .local
-            )
-            .onEnded { value in
-                sendGesture(
-                    value,
-                    imageRect: imageRect
-                )
-            }
-        )
-} else {
-    ProgressView()
-        .tint(.cyan)
-        .frame(
-            width: viewport.width,
-            height: viewport.height
-        )
-}
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .frame(
+                            width: viewport.width,
+                            height: viewport.height
+                        )
+                        .gesture(
+                            DragGesture(
+                                minimumDistance: 0,
+                                coordinateSpace: .local
+                            )
+                            .onEnded { value in
+                                sendGesture(
+                                    value,
+                                    imageRect: imageRect
+                                )
+                            }
+                        )
+                } else {
+                    ProgressView()
+                        .tint(.cyan)
+                        .frame(
+                            width: viewport.width,
+                            height: viewport.height
+                        )
+                }
 
-                // Giữ nguyên bong bóng thao tác đang hoạt động.
+                // Giữ nguyên bong bóng thao tác.
                 floatingBubble(in: viewport)
                     .zIndex(10)
             }
@@ -467,292 +464,3 @@ if let image = video.image {
                     } else {
                         showFloatingMenu = true
                     }
-
-                    bubbleDragStart = nil
-                }
-            )
-            .accessibilityLabel("Mở menu RootRemote")
-    }
-
-    private func setInitialBubblePosition(in size: CGSize) {
-        guard !hasInitialBubblePosition else { return }
-
-        bubblePosition = CGPoint(
-            x: size.width - bubbleSize / 2 - 16,
-            y: size.height * 0.55
-        )
-        hasInitialBubblePosition = true
-    }
-
-    private func clampBubblePosition(in size: CGSize) {
-        guard hasInitialBubblePosition else { return }
-        bubblePosition = clamp(bubblePosition, in: size)
-    }
-
-    private func clamp(_ point: CGPoint, in size: CGSize) -> CGPoint {
-        CGPoint(
-            x: min(
-                max(point.x, bubbleSize / 2 + 4),
-                size.width - bubbleSize / 2 - 4
-            ),
-            y: min(
-                max(point.y, bubbleSize / 2 + 8),
-                size.height - bubbleSize / 2 - 8
-            )
-        )
-    }
-
-    private func snapBubbleToNearestSide(in size: CGSize) {
-        let current = clamp(bubblePosition, in: size)
-        let leftX = bubbleSize / 2 + 8
-        let rightX = size.width - bubbleSize / 2 - 8
-
-        withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
-            bubblePosition = CGPoint(
-                x: abs(current.x - leftX) < abs(current.x - rightX)
-                    ? leftX
-                    : rightX,
-                y: current.y
-            )
-        }
-    }
-
-    private var settingsSheet: some View {
-        NavigationStack {
-            Form {
-                Section("Chất lượng hình ảnh") {
-                    Picker("Độ phân giải", selection: $videoQuality) {
-                        Text("480p • Nhẹ").tag("480p")
-                        Text("720p • Cân bằng").tag("720p")
-                        Text("1080p • Nét cao").tag("1080p")
-                    }
-                    .pickerStyle(.inline)
-
-                    LabeledContent(
-                        "Độ phân giải yêu cầu",
-                        value: "\(targetResolution.width) × \(targetResolution.height)"
-                    )
-
-                    LabeledContent(
-                        "Độ phân giải đang nhận",
-                        value: "\(video.width) × \(video.height)"
-                    )
-
-                    Button {
-                        applyVideoResolution()
-                    } label: {
-                        HStack {
-                            if isApplyingResolution {
-                                ProgressView()
-                            }
-                            Text("Áp dụng độ phân giải")
-                                .fontWeight(.semibold)
-                        }
-                    }
-                    .disabled(
-                        isApplyingResolution || !transport.isAuthenticated
-                    )
-
-                    if !resolutionMessage.isEmpty {
-                        Text(resolutionMessage)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Text("Android cần hỗ trợ yêu cầu này và phát lại luồng video ở kích thước mới.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Hiển thị màn hình") {
-                    Picker("Chế độ hiển thị", selection: $displayMode) {
-                        Text("Lấp đầy màn hình").tag("fillCrop")
-                        Text("Vừa màn hình, giữ nguyên tỉ lệ").tag("fit")
-                        Text("Kéo giãn toàn màn hình").tag("stretch")
-                    }
-                    .pickerStyle(.inline)
-
-                    Text(displayModeDescription)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Âm thanh") {
-                    Toggle(
-                        "Yêu cầu âm thanh Android",
-                        isOn: $audioEnabled
-                    )
-                    .onChange(of: audioEnabled) { enabled in
-                        onAudioChanged(enabled)
-                    }
-
-                    Text("Chức năng này cần module Android hỗ trợ thu và truyền âm thanh.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Kết nối") {
-                    LabeledContent("Điều khiển", value: transport.status)
-                    LabeledContent("Video", value: video.status)
-                }
-            }
-            .navigationTitle("Cài đặt")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Đóng") {
-                        showSettings = false
-                    }
-                }
-            }
-        }
-        .preferredColorScheme(.dark)
-    }
-
-    private var displayModeDescription: String {
-        switch displayMode {
-        case "stretch":
-            return "Video phủ kín màn hình nhưng hình ảnh có thể bị méo."
-
-        case "fit":
-            return "Video khớp chiều rộng màn hình, giữ nguyên tỷ lệ và không cắt nội dung. Với video dọc phù hợp, phần dư sẽ là viền đen phía trên và dưới."
-
-        default:
-            return "Lấp đầy màn hình theo chế độ cũ."
-        }
-    }
-
-    private func applyVideoResolution() {
-        let resolution = targetResolution
-        isApplyingResolution = true
-        resolutionMessage = "Đã gửi yêu cầu \(resolution.width) × \(resolution.height)."
-
-        transport.send([
-            "type": "settings",
-            "action": "video",
-            "width": resolution.width,
-            "height": resolution.height
-        ])
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            isApplyingResolution = false
-
-            if video.width == resolution.width &&
-                video.height == resolution.height {
-                resolutionMessage = "Luồng video đã dùng độ phân giải mới."
-            } else {
-                resolutionMessage = "Chưa thấy độ phân giải mới. Cần kiểm tra module Android."
-            }
-        }
-    }
-
-    private func sendGesture(
-        _ value: DragGesture.Value,
-        imageRect: CGRect
-    ) {
-        guard transport.isAuthenticated,
-              video.width > 0,
-              video.height > 0,
-              imageRect.width > 0,
-              imageRect.height > 0 else {
-            return
-        }
-
-        func map(_ point: CGPoint) -> (x: Int, y: Int)? {
-            let px = point.x - imageRect.minX
-            let py = point.y - imageRect.minY
-
-            // Không gửi thao tác khi chạm vào vùng viền đen.
-            guard px >= 0,
-                  py >= 0,
-                  px < imageRect.width,
-                  py < imageRect.height else {
-                return nil
-            }
-
-            let x = Int(
-                px / imageRect.width * CGFloat(video.width)
-            )
-            let y = Int(
-                py / imageRect.height * CGFloat(video.height)
-            )
-
-            return (
-                x: min(video.width - 1, max(0, x)),
-                y: min(video.height - 1, max(0, y))
-            )
-        }
-
-        guard let start = map(value.startLocation),
-              let end = map(value.location) else {
-            return
-        }
-
-        let dx = abs(value.location.x - value.startLocation.x)
-        let dy = abs(value.location.y - value.startLocation.y)
-
-        if dx < 8 && dy < 8 {
-            transport.send([
-                "type": "input",
-                "action": "tap",
-                "x": end.x,
-                "y": end.y
-            ])
-        } else {
-            transport.send([
-                "type": "input",
-                "action": "swipe",
-                "x1": start.x,
-                "y1": start.y,
-                "x2": end.x,
-                "y2": end.y,
-                "duration_ms": 250
-            ])
-        }
-    }
-}
-
-private enum PasswordStore {
-    private static let service = "RootRemote.Connection"
-    private static let account = "android-password"
-
-    static func save(_ password: String) {
-        guard let data = password.data(using: .utf8) else { return }
-
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-
-        SecItemDelete(query as CFDictionary)
-
-        var item = query
-        item[kSecValueData as String] = data
-        item[kSecAttrAccessible as String] =
-            kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-
-        SecItemAdd(item as CFDictionary, nil)
-    }
-
-    static func load() -> String {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let password = String(data: data, encoding: .utf8) else {
-            return ""
-        }
-
-        return password
-    }
-}
