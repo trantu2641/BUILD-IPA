@@ -1,111 +1,241 @@
 
 import SwiftUI
+import Security
 
 struct ContentView: View {
     @StateObject private var transport = RootRemoteTransport()
     @StateObject private var video = VideoStreamClient()
 
-    @State private var host = "192.168.1.10"
-    @State private var port = "28741"
-    @State private var videoPort = "28742"
-    @State private var token = ""
-    @State private var x = "500"
-    @State private var y = "800"
-    @State private var showFullScreen = false
-    @State private var videoInputError = ""
+    @AppStorage("rootremote.host")
+    private var savedHost = "192.168.1.10"
+
+    @AppStorage("rootremote.controlPort")
+    private var savedControlPort = "28741"
+
+    @AppStorage("rootremote.videoPort")
+    private var savedVideoPort = "28742"
+
+    @State private var password = ""
+    @State private var isConnecting = false
+    @State private var errorMessage = ""
 
     var body: some View {
-        NavigationView {
+        Group {
+            if transport.isAuthenticated {
+                RemoteScreen(
+                    video: video,
+                    transport: transport,
+                    onDisconnect: disconnect
+                )
+            } else {
+                connectionScreen
+            }
+        }
+        .preferredColorScheme(.dark)
+        .onAppear {
+            password = PasswordStore.load()
+        }
+        .onChange(of: transport.isAuthenticated) { authenticated in
+            if authenticated {
+                isConnecting = false
+            }
+        }
+        .onChange(of: video.image != nil) { hasImage in
+            if hasImage {
+                isConnecting = false
+            }
+        }
+    }
+
+    private var connectionScreen: some View {
+        ZStack {
+            Color(red: 0.035, green: 0.045, blue: 0.075)
+                .ignoresSafeArea()
+
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    connectionPanel
-                    videoPanel
-                    checkPanel
-                    manualPanel
-                    logPanel
+                VStack(spacing: 24) {
+                    Spacer(minLength: 35)
+
+                    Image(systemName: "iphone.gen3.radiowaves.left.and.right")
+                        .font(.system(size: 54, weight: .light))
+                        .foregroundStyle(.cyan)
+
+                    VStack(spacing: 8) {
+                        Text("RootRemote")
+                            .font(.largeTitle.bold())
+                            .foregroundStyle(.white)
+
+                        Text("Điều khiển Android từ xa")
+                            .foregroundStyle(.white.opacity(0.65))
+                    }
+
+                    VStack(spacing: 16) {
+                        field(
+                            "Địa chỉ Android",
+                            text: $savedHost,
+                            icon: "network"
+                        )
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+
+                        HStack(spacing: 12) {
+                            field(
+                                "Cổng điều khiển",
+                                text: $savedControlPort,
+                                icon: "slider.horizontal.3"
+                            )
+                            .keyboardType(.numberPad)
+
+                            field(
+                                "Cổng video",
+                                text: $savedVideoPort,
+                                icon: "video"
+                            )
+                            .keyboardType(.numberPad)
+                        }
+
+                        HStack(spacing: 10) {
+                            Image(systemName: "lock.fill")
+                                .foregroundStyle(.cyan)
+
+                            SecureField("Mật khẩu kết nối", text: $password)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                        }
+                        .padding(15)
+                        .background(.white.opacity(0.07))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                    .padding(20)
+                    .background(.white.opacity(0.045))
+                    .clipShape(RoundedRectangle(cornerRadius: 22))
+
+                    if !errorMessage.isEmpty {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    if isConnecting {
+                        ProgressView()
+                            .tint(.cyan)
+
+                        Text(transport.status + "\n" + video.status)
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                    }
+
+                    Button(action: connect) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "bolt.fill")
+                            Text(isConnecting ? "Đang kết nối..." : "Kết nối Android")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(17)
+                        .background(.cyan)
+                        .foregroundStyle(.black)
+                        .clipShape(RoundedRectangle(cornerRadius: 15))
+                    }
+                    .disabled(isConnecting)
+                    .opacity(isConnecting ? 0.65 : 1)
+
+                    Text("Địa chỉ và cổng được lưu trên thiết bị. Mật khẩu được lưu trong Keychain.")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.45))
+                        .multilineTextAlignment(.center)
+
+                    Spacer(minLength: 30)
                 }
-                .padding()
+                .padding(22)
+                .frame(maxWidth: 520)
+                .frame(maxWidth: .infinity)
             }
-            .navigationTitle("RootRemote")
-        }
-        .fullScreenCover(isPresented: $showFullScreen) {
-            FullScreenAndroidView(
-                video: video,
-                transport: transport,
-                onClose: { showFullScreen = false }
-            )
         }
     }
 
-    private var connectionPanel: some View {
-        panel("Kết nối Android") {
-            TextField("IP / hostname", text: $host)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .textFieldStyle(.roundedBorder)
+    private func field(
+        _ title: String,
+        text: Binding<String>,
+        icon: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.6))
 
-            TextField("Cổng điều khiển", text: $port)
-                .keyboardType(.numberPad)
-                .textFieldStyle(.roundedBorder)
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .foregroundStyle(.cyan)
+                    .frame(width: 20)
 
-            SecureField("Token", text: $token)
-                .textInputAutocapitalization(.never)
-                .textFieldStyle(.roundedBorder)
-
-            Button("Kết nối điều khiển") {
-                guard let p = UInt16(port),
-                      !host.isEmpty,
-                      !token.isEmpty else {
-                    transport.setStatus("Hãy nhập IP, cổng và token.")
-                    return
-                }
-
-                transport.connect(host: host, port: p, token: token)
+                TextField(title, text: text)
+                    .foregroundStyle(.white)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
             }
-            .buttonStyle(.borderedProminent)
-
-            Button("Ngắt kết nối điều khiển") {
-                transport.disconnect()
-            }
-            .buttonStyle(.bordered)
-
-            Text("Trạng thái: \(transport.status)")
-                .font(.footnote)
-                .textSelection(.enabled)
+            .padding(12)
+            .background(.white.opacity(0.07))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var videoPanel: some View {
-        panel("Màn hình Android") {
-            TextField("Cổng video", text: $videoPort)
-                .keyboardType(.numberPad)
-                .textFieldStyle(.roundedBorder)
+    private func connect() {
+        let host = savedHost.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            Button("Kết nối xem màn hình") {
-                guard let p = UInt16(videoPort),
-                      p > 0,
-                      !host.isEmpty,
-                      !token.isEmpty else {
-                    videoInputError = "IP, cổng video hoặc token không hợp lệ."
-                    return
-                }
+        guard !host.isEmpty,
+              !password.isEmpty,
+              let control = UInt16(savedControlPort),
+              control > 0,
+              let videoPort = UInt16(savedVideoPort),
+              videoPort > 0 else {
+            errorMessage = "Hãy kiểm tra địa chỉ, hai cổng và mật khẩu."
+            return
+        }
 
-                videoInputError = ""
-                video.connect(host: host, port: p, token: token)
-            }
-            .buttonStyle(.borderedProminent)
+        errorMessage = ""
+        isConnecting = true
 
-            Button("Ngắt video") {
-                video.disconnect()
-            }
-            .buttonStyle(.bordered)
+        PasswordStore.save(password)
 
-            Text(videoInputError.isEmpty ? video.status : videoInputError)
-                .font(.footnote)
-                .textSelection(.enabled)
+        transport.connect(
+            host: host,
+            port: control,
+            token: password
+        )
 
-            if let image = video.image {
-                GeometryReader { geometry in
+        video.connect(
+            host: host,
+            port: videoPort,
+            token: password
+        )
+    }
+
+    private func disconnect() {
+        video.disconnect()
+        transport.disconnect()
+        isConnecting = false
+    }
+}
+
+private struct RemoteScreen: View {
+    @ObservedObject var video: VideoStreamClient
+    @ObservedObject var transport: RootRemoteTransport
+
+    let onDisconnect: () -> Void
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Color.black
+                    .ignoresSafeArea()
+
+                if let image = video.image {
+                    // Fit: giữ nguyên tỷ lệ Android, không cắt cạnh.
                     Image(uiImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
@@ -119,356 +249,63 @@ struct ContentView: View {
                                 .onEnded { value in
                                     sendGesture(
                                         value,
-                                        size: geometry.size,
-                                        fill: false
-                                    )
-                                }
-                        )
-                }
-                .frame(height: 240)
-                .frame(maxWidth: .infinity)
-
-                Button {
-                    showFullScreen = true
-                } label: {
-                    Label(
-                        "Toàn màn hình",
-                        systemImage: "arrow.up.left.and.arrow.down.right"
-                    )
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-            } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.secondary.opacity(0.12))
-                    .frame(height: 150)
-                    .overlay {
-                        VStack(spacing: 8) {
-                            Image(systemName: "display")
-                                .font(.largeTitle)
-
-                            Text("Chưa có hình ảnh Android")
-                                .font(.footnote)
-                        }
-                        .foregroundColor(.secondary)
-                    }
-            }
-        }
-    }
-
-    private var checkPanel: some View {
-        panel("Kiểm tra kết nối") {
-            Button("Ping") {
-                transport.send([
-                    "type": "ping",
-                    "seq": Int(Date().timeIntervalSince1970)
-                ])
-            }
-            .buttonStyle(.bordered)
-            .disabled(!transport.isAuthenticated)
-
-            Button("Trạng thái agent") {
-                transport.send(["type": "status"])
-            }
-            .buttonStyle(.bordered)
-            .disabled(!transport.isAuthenticated)
-        }
-    }
-
-    private var manualPanel: some View {
-        panel("Điều khiển thủ công") {
-            HStack {
-                TextField("X pixel", text: $x)
-                    .keyboardType(.numberPad)
-                    .textFieldStyle(.roundedBorder)
-
-                TextField("Y pixel", text: $y)
-                    .keyboardType(.numberPad)
-                    .textFieldStyle(.roundedBorder)
-            }
-
-            Button("Chạm tại tọa độ") {
-                guard let px = Int(x), let py = Int(y) else {
-                    return
-                }
-
-                transport.send([
-                    "type": "input",
-                    "action": "tap",
-                    "x": px,
-                    "y": py
-                ])
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!transport.isAuthenticated)
-
-            HStack {
-                Button {
-                    sendKey("BACK")
-                } label: {
-                    Label("Back", systemImage: "chevron.left")
-                }
-                .buttonStyle(.bordered)
-                .disabled(!transport.isAuthenticated)
-
-                Button {
-                    sendKey("HOME")
-                } label: {
-                    Label("Home", systemImage: "house")
-                }
-                .buttonStyle(.bordered)
-                .disabled(!transport.isAuthenticated)
-            }
-        }
-    }
-
-    private var logPanel: some View {
-        panel("Nhật ký") {
-            if transport.messages.isEmpty {
-                Text("Chưa có nhật ký.")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-            } else {
-                ForEach(
-                    Array(transport.messages.enumerated()),
-                    id: \.offset
-                ) { _, line in
-                    Text(line)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(
-                            maxWidth: .infinity,
-                            alignment: .leading
-                        )
-                        .padding(.vertical, 3)
-                }
-            }
-
-            Button("Xóa nhật ký") {
-                transport.clearMessages()
-            }
-            .buttonStyle(.bordered)
-        }
-    }
-
-    private func panel<Content: View>(
-        _ title: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.headline)
-
-            content()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(Color.secondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-    }
-
-    private func sendKey(_ key: String) {
-        transport.send([
-            "type": "input",
-            "action": "key",
-            "key": key
-        ])
-    }
-
-    private func sendGesture(
-        _ value: DragGesture.Value,
-        size: CGSize,
-        fill: Bool
-    ) {
-        guard transport.isAuthenticated,
-              let start = androidPoint(
-                value.startLocation,
-                size: size,
-                fill: fill
-              ),
-              let end = androidPoint(
-                value.location,
-                size: size,
-                fill: fill
-              ) else {
-            return
-        }
-
-        let dx = abs(value.location.x - value.startLocation.x)
-        let dy = abs(value.location.y - value.startLocation.y)
-
-        if dx < 8 && dy < 8 {
-            transport.send([
-                "type": "input",
-                "action": "tap",
-                "x": end.x,
-                "y": end.y
-            ])
-        } else {
-            transport.send([
-                "type": "input",
-                "action": "swipe",
-                "x1": start.x,
-                "y1": start.y,
-                "x2": end.x,
-                "y2": end.y,
-                "duration_ms": 250
-            ])
-        }
-    }
-
-    private func androidPoint(
-        _ point: CGPoint,
-        size: CGSize,
-        fill: Bool
-    ) -> (x: Int, y: Int)? {
-        guard video.width > 0,
-              video.height > 0,
-              size.width > 0,
-              size.height > 0 else {
-            return nil
-        }
-
-        let sourceWidth = CGFloat(video.width)
-        let sourceHeight = CGFloat(video.height)
-
-        let widthScale = size.width / sourceWidth
-        let heightScale = size.height / sourceHeight
-        let scale = fill
-            ? max(widthScale, heightScale)
-            : min(widthScale, heightScale)
-
-        let renderedWidth = sourceWidth * scale
-        let renderedHeight = sourceHeight * scale
-        let offsetX = (size.width - renderedWidth) / 2
-        let offsetY = (size.height - renderedHeight) / 2
-
-        let px = (point.x - offsetX) / scale
-        let py = (point.y - offsetY) / scale
-
-        guard px >= 0,
-              py >= 0,
-              px < sourceWidth,
-              py < sourceHeight else {
-            return nil
-        }
-
-        return (Int(px), Int(py))
-    }
-}
-
-private struct FullScreenAndroidView: View {
-    @ObservedObject var video: VideoStreamClient
-    @ObservedObject var transport: RootRemoteTransport
-
-    let onClose: () -> Void
-
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                Color.black
-                    .ignoresSafeArea()
-
-                // Phóng video lấp đầy toàn bộ màn hình.
-                // Nếu tỷ lệ Android và iPhone khác nhau,
-                // phần dư sẽ bị cắt thay vì để video nhỏ ở giữa.
-                if let image = video.image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(
-                            width: geometry.size.width,
-                            height: geometry.size.height
-                        )
-                        .clipped()
-                        .contentShape(Rectangle())
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onEnded { value in
-                                    sendGesture(
-                                        value,
                                         size: geometry.size
                                     )
                                 }
                         )
                 } else {
-                    VStack(spacing: 12) {
+                    VStack(spacing: 14) {
                         ProgressView()
-                            .tint(.white)
+                            .tint(.cyan)
 
-                        Text("Đang chờ hình ảnh Android...")
-                            .foregroundColor(.white)
-                    }
-                }
-
-                // Thanh điều khiển nằm phía trên video.
-                VStack {
-                    HStack {
-                        Button(action: onClose) {
-                            Label("Đóng", systemImage: "xmark")
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 9)
-                                .background(Color.black.opacity(0.8))
-                                .clipShape(Capsule())
-                        }
-
-                        Spacer()
+                        Text("Đang nhận màn hình Android...")
+                            .foregroundStyle(.white)
 
                         Text(video.status)
                             .font(.caption)
-                            .lineLimit(2)
-                            .padding(8)
-                            .background(Color.black.opacity(0.8))
-                            .clipShape(Capsule())
+                            .foregroundStyle(.white.opacity(0.65))
                     }
+                }
+
+                VStack {
+                    HStack {
+                        Circle()
+                            .fill(
+                                video.image == nil
+                                    ? Color.orange
+                                    : Color.green
+                            )
+                            .frame(width: 8, height: 8)
+
+                        Text(video.image == nil ? "Đang kết nối" : "Đang điều khiển")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.white)
+
+                        Spacer()
+
+                        Button(action: onDisconnect) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 38, height: 38)
+                                .background(.black.opacity(0.65))
+                                .clipShape(Circle())
+                        }
+                        .accessibilityLabel("Ngắt kết nối")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
 
                     Spacer()
-
-                    HStack(spacing: 28) {
-                        Button {
-                            sendKey("BACK")
-                        } label: {
-                            Label("Back", systemImage: "chevron.left")
-                        }
-                        .disabled(!transport.isAuthenticated)
-
-                        Button {
-                            sendKey("HOME")
-                        } label: {
-                            Label("Home", systemImage: "house")
-                        }
-                        .disabled(!transport.isAuthenticated)
-                    }
-                    .font(.headline)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 13)
-                    .background(Color.black.opacity(0.85))
-                    .clipShape(Capsule())
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.gray.opacity(0.7))
-                .foregroundColor(.white)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 20)
             }
             .frame(
                 width: geometry.size.width,
                 height: geometry.size.height
             )
-            .background(Color.black)
         }
         .ignoresSafeArea()
-        .preferredColorScheme(.dark)
         .statusBarHidden(true)
-    }
-
-    private func sendKey(_ key: String) {
-        transport.send([
-            "type": "input",
-            "action": "key",
-            "key": key
-        ])
     }
 
     private func sendGesture(
@@ -476,14 +313,44 @@ private struct FullScreenAndroidView: View {
         size: CGSize
     ) {
         guard transport.isAuthenticated,
-              let start = androidPoint(
-                value.startLocation,
-                size: size
-              ),
-              let end = androidPoint(
-                value.location,
-                size: size
-              ) else {
+              video.width > 0,
+              video.height > 0,
+              size.width > 0,
+              size.height > 0 else {
+            return
+        }
+
+        // Tính đúng vùng ảnh thực tế theo tỷ lệ aspect fit.
+        // Phần viền đen không được xem là vùng chạm Android.
+        let sourceWidth = CGFloat(video.width)
+        let sourceHeight = CGFloat(video.height)
+
+        let scale = min(
+            size.width / sourceWidth,
+            size.height / sourceHeight
+        )
+
+        let displayedWidth = sourceWidth * scale
+        let displayedHeight = sourceHeight * scale
+        let offsetX = (size.width - displayedWidth) / 2
+        let offsetY = (size.height - displayedHeight) / 2
+
+        func mapPoint(_ point: CGPoint) -> (x: Int, y: Int)? {
+            let px = (point.x - offsetX) / scale
+            let py = (point.y - offsetY) / scale
+
+            guard px >= 0,
+                  py >= 0,
+                  px < sourceWidth,
+                  py < sourceHeight else {
+                return nil
+            }
+
+            return (Int(px), Int(py))
+        }
+
+        guard let start = mapPoint(value.startLocation),
+              let end = mapPoint(value.location) else {
             return
         }
 
@@ -509,43 +376,54 @@ private struct FullScreenAndroidView: View {
             ])
         }
     }
+}
 
-    // Ánh xạ tọa độ theo chế độ fill, có tính cả phần ảnh bị cắt.
-    private func androidPoint(
-        _ point: CGPoint,
-        size: CGSize
-    ) -> (x: Int, y: Int)? {
-        guard video.width > 0,
-              video.height > 0,
-              size.width > 0,
-              size.height > 0 else {
-            return nil
+private enum PasswordStore {
+    private static let service = "RootRemote.Connection"
+    private static let account = "android-password"
+
+    static func save(_ password: String) {
+        guard let data = password.data(using: .utf8) else {
+            return
         }
 
-        let sourceWidth = CGFloat(video.width)
-        let sourceHeight = CGFloat(video.height)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
 
-        let scale = max(
-            size.width / sourceWidth,
-            size.height / sourceHeight
+        SecItemDelete(query as CFDictionary)
+
+        var item = query
+        item[kSecValueData as String] = data
+        item[kSecAttrAccessible as String] =
+            kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+
+        SecItemAdd(item as CFDictionary, nil)
+    }
+
+    static func load() -> String {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(
+            query as CFDictionary,
+            &result
         )
 
-        let renderedWidth = sourceWidth * scale
-        let renderedHeight = sourceHeight * scale
-
-        let offsetX = (size.width - renderedWidth) / 2
-        let offsetY = (size.height - renderedHeight) / 2
-
-        let px = (point.x - offsetX) / scale
-        let py = (point.y - offsetY) / scale
-
-        guard px >= 0,
-              py >= 0,
-              px < sourceWidth,
-              py < sourceHeight else {
-            return nil
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let password = String(data: data, encoding: .utf8) else {
+            return ""
         }
 
-        return (Int(px), Int(py))
+        return password
     }
 }
