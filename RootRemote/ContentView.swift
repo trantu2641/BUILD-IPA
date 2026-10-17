@@ -266,8 +266,6 @@ private struct RemoteScreen: View {
                     .ignoresSafeArea()
 
                 if let image = video.image {
-                    // Ưu tiên kích thước pixel thực của ảnh đã giải mã.
-                    // Nếu không có CGImage thì dùng kích thước luồng video.
                     let sourceW = CGFloat(
                         max(image.cgImage?.width ?? video.width, 1)
                     )
@@ -275,22 +273,22 @@ private struct RemoteScreen: View {
                         max(image.cgImage?.height ?? video.height, 1)
                     )
 
-                    // Chế độ mặc định: khớp chiều rộng, giữ nguyên tỷ lệ.
-                    // Chế độ fit: hiện toàn bộ ảnh trong vùng nhìn.
-                    // Chế độ stretch: kéo ảnh phủ toàn màn hình.
+                    // Chỉ chế độ "fit" được thay đổi:
+                    // khớp chiều rộng, giữ tỷ lệ, không cắt hình.
+                    // Chế độ full và stretch giữ nguyên cách tính cũ.
                     let scale: CGFloat = {
                         switch displayMode {
+                        case "fit":
+                            return viewport.width / sourceW
+
                         case "stretch":
                             return 1
 
-                        case "fit":
-                            return min(
+                        default:
+                            return max(
                                 viewport.width / sourceW,
                                 viewport.height / sourceH
                             )
-
-                        default:
-                            return viewport.width / sourceW
                         }
                     }()
 
@@ -308,8 +306,6 @@ private struct RemoteScreen: View {
                         return sourceH * scale
                     }()
 
-                    // Vị trí và kích thước ảnh thực tế trên màn hình.
-                    // Các thao tác chạm bên ngoài vùng ảnh sẽ bị bỏ qua.
                     let imageRect = CGRect(
                         x: (viewport.width - drawnW) / 2,
                         y: (viewport.height - drawnH) / 2,
@@ -355,7 +351,7 @@ private struct RemoteScreen: View {
                         )
                 }
 
-                // Giữ nguyên bong bóng thao tác.
+                // Giữ nguyên bong bóng thao tác đang hoạt động.
                 floatingBubble(in: viewport)
                     .zIndex(10)
             }
@@ -563,14 +559,9 @@ private struct RemoteScreen: View {
 
                 Section("Hiển thị màn hình") {
                     Picker("Chế độ hiển thị", selection: $displayMode) {
-                        Text("Khớp chiều rộng, giữ tỉ lệ")
-                            .tag("fillCrop")
-
-                        Text("Vừa màn hình, giữ nguyên tỉ lệ")
-                            .tag("fit")
-
-                        Text("Kéo giãn toàn màn hình")
-                            .tag("stretch")
+                        Text("Lấp đầy màn hình").tag("fillCrop")
+                        Text("Vừa màn hình, giữ nguyên tỉ lệ").tag("fit")
+                        Text("Kéo giãn toàn màn hình").tag("stretch")
                     }
                     .pickerStyle(.inline)
 
@@ -617,10 +608,10 @@ private struct RemoteScreen: View {
             return "Video phủ kín màn hình nhưng hình ảnh có thể bị méo."
 
         case "fit":
-            return "Hiện toàn bộ hình ảnh trong vùng màn hình; có thể có viền đen ở cạnh trái, phải hoặc trên, dưới."
+            return "Video khớp chiều rộng màn hình, giữ nguyên tỷ lệ và không cắt nội dung. Với video dọc phù hợp, phần dư sẽ là viền đen phía trên và dưới."
 
         default:
-            return "Video chạm sát hai mép trái và phải, giữ nguyên tỉ lệ. Nếu cần, viền đen chỉ xuất hiện phía trên và phía dưới."
+            return "Lấp đầy màn hình theo chế độ cũ."
         }
     }
 
