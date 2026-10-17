@@ -15,14 +15,8 @@ struct ContentView: View {
     @AppStorage("rootremote.videoPort")
     private var savedVideoPort = "28742"
 
-    @AppStorage("rootremote.resolution")
-    private var selectedResolution = "1280x720"
-
-    @AppStorage("rootremote.fps")
-    private var selectedFPS = 60
-
     @AppStorage("rootremote.audioEnabled")
-    private var audioEnabled = true
+    private var audioEnabled = false
 
     @State private var password = ""
     @State private var isConnecting = false
@@ -35,7 +29,7 @@ struct ContentView: View {
                     video: video,
                     transport: transport,
                     onDisconnect: disconnect,
-                    onApplySettings: applyRemoteSettings
+                    onAudioChanged: sendAudioSetting
                 )
             } else {
                 connectionScreen
@@ -48,11 +42,6 @@ struct ContentView: View {
         .onChange(of: transport.isAuthenticated) { authenticated in
             if authenticated {
                 isConnecting = false
-                applyRemoteSettings(
-                    resolution: selectedResolution,
-                    fps: selectedFPS,
-                    audioEnabled: audioEnabled
-                )
             }
         }
         .onChange(of: video.image != nil) { hasImage in
@@ -86,7 +75,7 @@ struct ContentView: View {
 
                     VStack(spacing: 16) {
                         field(
-                            "Địa chỉ Android",
+                            "Địa chỉ ZeroTier của Android",
                             text: $savedHost,
                             icon: "network"
                         )
@@ -130,7 +119,10 @@ struct ContentView: View {
                         Text(errorMessage)
                             .font(.footnote)
                             .foregroundStyle(.red)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(
+                                maxWidth: .infinity,
+                                alignment: .leading
+                            )
                     }
 
                     if isConnecting {
@@ -146,8 +138,12 @@ struct ContentView: View {
                     Button(action: connect) {
                         HStack(spacing: 10) {
                             Image(systemName: "bolt.fill")
-                            Text(isConnecting ? "Đang kết nối..." : "Kết nối Android")
-                                .fontWeight(.semibold)
+                            Text(
+                                isConnecting
+                                    ? "Đang kết nối..."
+                                    : "Kết nối Android"
+                            )
+                            .fontWeight(.semibold)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(17)
@@ -158,10 +154,13 @@ struct ContentView: View {
                     .disabled(isConnecting)
                     .opacity(isConnecting ? 0.65 : 1)
 
-                    Text("Địa chỉ và cổng được lưu trên thiết bị. Mật khẩu được lưu trong Keychain.")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.45))
-                        .multilineTextAlignment(.center)
+                    Text(
+                        "Nhập Managed IP của Android trong ZeroTier. " +
+                        "Mật khẩu được lưu trong Keychain."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.45))
+                    .multilineTextAlignment(.center)
 
                     Spacer(minLength: 30)
                 }
@@ -232,32 +231,11 @@ struct ContentView: View {
         )
     }
 
-    private func applyRemoteSettings(
-        resolution: String,
-        fps: Int,
-        audioEnabled: Bool
-    ) {
-        let dimensions = resolution.split(separator: "x")
-
-        guard dimensions.count == 2,
-              let width = Int(dimensions[0]),
-              let height = Int(dimensions[1]) else {
-            return
-        }
-
-        // Gửi cấu hình video tới agent Android.
-        transport.send([
-            "type": "settings",
-            "action": "video",
-            "width": width,
-            "height": height,
-            "fps": fps
-        ])
-
-        // Gửi lệnh bật/tắt âm thanh tới agent Android.
+    private func sendAudioSetting(_ enabled: Bool) {
+        // Android Agent hiện tại chưa triển khai truyền âm thanh thực tế.
         transport.send([
             "type": "audio",
-            "action": audioEnabled ? "start" : "stop"
+            "action": enabled ? "start" : "stop"
         ])
     }
 
@@ -273,46 +251,72 @@ private struct RemoteScreen: View {
     @ObservedObject var transport: RootRemoteTransport
 
     let onDisconnect: () -> Void
-    let onApplySettings: (
-        _ resolution: String,
-        _ fps: Int,
-        _ audioEnabled: Bool
-    ) -> Void
-
-    @AppStorage("rootremote.resolution")
-    private var selectedResolution = "1280x720"
-
-    @AppStorage("rootremote.fps")
-    private var selectedFPS = 60
+    let onAudioChanged: (Bool) -> Void
 
     @AppStorage("rootremote.audioEnabled")
-    private var audioEnabled = true
+    private var audioEnabled = false
 
     @State private var showSettings = false
 
     var body: some View {
         GeometryReader { geometry in
+            let viewport = geometry.size
+
             ZStack {
                 Color.black
                     .ignoresSafeArea()
 
                 if let image = video.image {
+                    let sourceW = CGFloat(max(video.width, 1))
+                    let sourceH = CGFloat(max(video.height, 1))
+
+                    let scale = min(
+                        viewport.width / sourceW,
+                        viewport.height / sourceH
+                    )
+
+                    let drawnW = sourceW * scale
+                    let drawnH = sourceH * scale
+
+                    let imageRect = CGRect(
+                        x: (viewport.width - drawnW) / 2,
+                        y: (viewport.height - drawnH) / 2,
+                        width: drawnW,
+                        height: drawnH
+                    )
+
                     Image(uiImage: image)
                         .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(
-                            width: geometry.size.width,
-                            height: geometry.size.height
+                        .interpolation(.high)
+                        .aspectRatio(
+                            contentMode: .fit
                         )
+                        .frame(
+                            width: drawnW,
+                            height: drawnH
+                        )
+                        .position(
+                            x: viewport.width / 2,
+                            y: viewport.height / 2
+                        )
+
+                    Color.clear
                         .contentShape(Rectangle())
+                        .frame(
+                            width: viewport.width,
+                            height: viewport.height
+                        )
                         .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onEnded { value in
-                                    sendGesture(
-                                        value,
-                                        size: geometry.size
-                                    )
-                                }
+                            DragGesture(
+                                minimumDistance: 0,
+                                coordinateSpace: .local
+                            )
+                            .onEnded { value in
+                                sendGesture(
+                                    value,
+                                    imageRect: imageRect
+                                )
+                            }
                         )
                 } else {
                     VStack(spacing: 14) {
@@ -329,7 +333,7 @@ private struct RemoteScreen: View {
                 }
 
                 VStack {
-                    HStack {
+                    HStack(spacing: 8) {
                         Circle()
                             .fill(
                                 video.image == nil
@@ -352,33 +356,43 @@ private struct RemoteScreen: View {
                             showSettings = true
                         } label: {
                             Image(systemName: "gearshape.fill")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(
+                                    .system(
+                                        size: 16,
+                                        weight: .semibold
+                                    )
+                                )
                                 .foregroundStyle(.white)
-                                .frame(width: 38, height: 38)
+                                .frame(width: 42, height: 42)
                                 .background(.black.opacity(0.65))
                                 .clipShape(Circle())
                         }
-                        .accessibilityLabel("Cài đặt truyền hình ảnh và âm thanh")
+                        .accessibilityLabel("Cài đặt")
 
                         Button(action: onDisconnect) {
                             Image(systemName: "xmark")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(
+                                    .system(
+                                        size: 16,
+                                        weight: .bold
+                                    )
+                                )
                                 .foregroundStyle(.white)
-                                .frame(width: 38, height: 38)
+                                .frame(width: 42, height: 42)
                                 .background(.black.opacity(0.65))
                                 .clipShape(Circle())
                         }
                         .accessibilityLabel("Ngắt kết nối")
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 8)
+                    .padding(.top, 6)
 
                     Spacer()
                 }
             }
             .frame(
-                width: geometry.size.width,
-                height: geometry.size.height
+                width: viewport.width,
+                height: viewport.height
             )
         }
         .ignoresSafeArea()
@@ -386,62 +400,47 @@ private struct RemoteScreen: View {
         .sheet(isPresented: $showSettings) {
             NavigationStack {
                 Form {
-                    Section("Độ phân giải màn hình") {
-                        Picker(
-                            "Độ phân giải",
-                            selection: $selectedResolution
-                        ) {
-                            Text("1280 × 720").tag("1280x720")
-                            Text("1920 × 1080").tag("1920x1080")
-                        }
-                        .pickerStyle(.inline)
-                    }
-
-                    Section("Tốc độ khung hình") {
-                        Picker("FPS", selection: $selectedFPS) {
-                            Text("30 FPS").tag(30)
-                            Text("45 FPS").tag(45)
-                            Text("60 FPS").tag(60)
-                        }
-                        .pickerStyle(.segmented)
-                    }
-
-                    Section("Âm thanh") {
-                        Toggle(
-                            "Nghe âm thanh Android",
-                            isOn: $audioEnabled
+                    Section("Luồng video") {
+                        LabeledContent(
+                            "Kích thước từ Android",
+                            value: "\(video.width) × \(video.height)"
                         )
 
                         Text(
-                            "Lựa chọn được lưu trên iPhone. Agent Android cần hỗ trợ giao thức âm thanh để truyền tiếng thực tế."
+                            "Ứng dụng không tự thay đổi độ phân giải " +
+                            "Android khi kết nối."
                         )
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     }
 
-                    Section {
-                        LabeledContent(
-                            "Đang chọn",
-                            value: "\(selectedResolution.replacingOccurrences(of: "x", with: " × ")) · \(selectedFPS) FPS"
+                    Section("Âm thanh") {
+                        Toggle(
+                            "Yêu cầu âm thanh Android",
+                            isOn: $audioEnabled
                         )
-                    }
-                }
-                .navigationTitle("Cài đặt truyền")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Hủy") {
-                            showSettings = false
+                        .onChange(of: audioEnabled) { enabled in
+                            onAudioChanged(enabled)
                         }
+
+                        Text(
+                            "Tùy chọn này chỉ gửi yêu cầu. Agent Android " +
+                            "cần có bộ thu và truyền âm thanh thực tế."
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     }
 
+                    Section("Trạng thái") {
+                        Text(transport.status)
+                        Text(video.status)
+                    }
+                }
+                .navigationTitle("Cài đặt RootRemote")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Áp dụng") {
-                            onApplySettings(
-                                selectedResolution,
-                                selectedFPS,
-                                audioEnabled
-                            )
+                        Button("Đóng") {
                             showSettings = false
                         }
                     }
@@ -453,51 +452,63 @@ private struct RemoteScreen: View {
 
     private func sendGesture(
         _ value: DragGesture.Value,
-        size: CGSize
+        imageRect: CGRect
     ) {
         guard transport.isAuthenticated,
               video.width > 0,
               video.height > 0,
-              size.width > 0,
-              size.height > 0 else {
+              imageRect.width > 0,
+              imageRect.height > 0 else {
             return
         }
 
-        // Ánh xạ tọa độ theo vùng ảnh thực tế, không tính viền đen.
-        let sourceWidth = CGFloat(video.width)
-        let sourceHeight = CGFloat(video.height)
-
-        let scale = min(
-            size.width / sourceWidth,
-            size.height / sourceHeight
-        )
-
-        let displayedWidth = sourceWidth * scale
-        let displayedHeight = sourceHeight * scale
-        let offsetX = (size.width - displayedWidth) / 2
-        let offsetY = (size.height - displayedHeight) / 2
-
-        func mapPoint(_ point: CGPoint) -> (x: Int, y: Int)? {
-            let px = (point.x - offsetX) / scale
-            let py = (point.y - offsetY) / scale
+        func map(_ point: CGPoint) -> (x: Int, y: Int)? {
+            let px = point.x - imageRect.minX
+            let py = point.y - imageRect.minY
 
             guard px >= 0,
                   py >= 0,
-                  px < sourceWidth,
-                  py < sourceHeight else {
+                  px < imageRect.width,
+                  py < imageRect.height else {
                 return nil
             }
 
-            return (Int(px), Int(py))
+            return (
+                x: min(
+                    video.width - 1,
+                    max(
+                        0,
+                        Int(
+                            px / imageRect.width *
+                            CGFloat(video.width)
+                        )
+                    )
+                ),
+                y: min(
+                    video.height - 1,
+                    max(
+                        0,
+                        Int(
+                            py / imageRect.height *
+                            CGFloat(video.height)
+                        )
+                    )
+                )
+            )
         }
 
-        guard let start = mapPoint(value.startLocation),
-              let end = mapPoint(value.location) else {
+        guard let start = map(value.startLocation),
+              let end = map(value.location) else {
             return
         }
 
-        let dx = abs(value.location.x - value.startLocation.x)
-        let dy = abs(value.location.y - value.startLocation.y)
+        let dx = abs(
+            value.location.x - value.startLocation.x
+        )
+
+        let dy = abs(
+            value.location.y - value.startLocation.y
+        )
 
         if dx < 8 && dy < 8 {
             transport.send([
@@ -555,6 +566,7 @@ private enum PasswordStore {
         ]
 
         var result: CFTypeRef?
+
         let status = SecItemCopyMatching(
             query as CFDictionary,
             &result
@@ -562,7 +574,10 @@ private enum PasswordStore {
 
         guard status == errSecSuccess,
               let data = result as? Data,
-              let password = String(data: data, encoding: .utf8) else {
+              let password = String(
+                data: data,
+                encoding: .utf8
+              ) else {
             return ""
         }
 
