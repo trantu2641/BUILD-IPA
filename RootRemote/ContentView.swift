@@ -21,8 +21,9 @@ struct ContentView: View {
     @AppStorage("rootremote.videoQuality")
     private var videoQuality = "720p"
 
+    // Mặc định lấp đầy màn hình, không thu nhỏ video vào giữa.
     @AppStorage("rootremote.displayMode")
-    private var displayMode = "fit"
+    private var displayMode = "fillCrop"
 
     @State private var password = ""
     @State private var isConnecting = false
@@ -306,17 +307,23 @@ private struct RemoteScreen: View {
                     let sourceW = CGFloat(max(video.width, 1))
                     let sourceH = CGFloat(max(video.height, 1))
 
+                    // fillCrop: phóng video đủ phủ màn hình.
+                    // fit: xem toàn bộ video, chấp nhận viền đen.
+                    // stretch: kéo giãn, có thể làm méo hình.
                     let scale: CGFloat = {
                         switch displayMode {
                         case "stretch":
                             return 1
-                        case "fillCrop":
-                            return max(
+                        case "fit":
+                            return min(
                                 viewport.width / sourceW,
                                 viewport.height / sourceH
                             )
                         default:
-                            return viewport.width / sourceW
+                            return max(
+                                viewport.width / sourceW,
+                                viewport.height / sourceH
+                            )
                         }
                     }()
 
@@ -351,6 +358,7 @@ private struct RemoteScreen: View {
                         )
                         .clipped()
 
+                    // Vùng nhận thao tác chạm và vuốt trên Android.
                     Color.clear
                         .contentShape(Rectangle())
                         .frame(
@@ -420,9 +428,7 @@ private struct RemoteScreen: View {
         }
     }
 
-    // Chạm nhanh mở menu. Kéo chỉ di chuyển bong bóng.
-    // Không dùng Button kết hợp simultaneousGesture để tránh
-    // việc thả tay sau khi kéo vẫn kích hoạt nút.
+    // Chạm nhanh mở menu, kéo chỉ di chuyển bong bóng.
     private func floatingBubble(in viewport: CGSize) -> some View {
         let x = hasInitialBubblePosition
             ? bubblePosition.x
@@ -491,10 +497,8 @@ private struct RemoteScreen: View {
                     )
 
                     if distance >= dragThreshold {
-                        // Kéo xong, dạt về cạnh gần nhất.
                         snapBubbleToNearestSide(in: viewport)
                     } else {
-                        // Không kéo đáng kể: coi là chạm.
                         showFloatingMenu = true
                     }
 
@@ -607,9 +611,9 @@ private struct RemoteScreen: View {
 
                 Section("Hiển thị màn hình") {
                     Picker("Chế độ hiển thị", selection: $displayMode) {
-                        Text("Lấp đầy, cắt mép").tag("fillCrop")
+                        Text("Lấp đầy màn hình").tag("fillCrop")
+                        Text("Vừa màn hình, giữ nguyên tỉ lệ").tag("fit")
                         Text("Kéo giãn toàn màn hình").tag("stretch")
-                        Text("Giữ tỉ lệ, vừa chiều rộng").tag("fit")
                     }
                     .pickerStyle(.inline)
 
@@ -657,11 +661,10 @@ private struct RemoteScreen: View {
         switch displayMode {
         case "stretch":
             return "Video phủ kín màn hình nhưng hình ảnh có thể bị méo."
-        case "fillCrop":
-            return "Video phủ kín màn hình; phần vượt khỏi mép bị cắt."
+        case "fit":
+            return "Hiện toàn bộ hình ảnh, có thể còn viền đen."
         default:
-            return "Video vừa chiều rộng iPhone, giữ tỉ lệ gốc. " +
-                   "Có thể có khoảng trống phía trên và dưới."
+            return "Phóng video phủ kín màn hình, giữ tỉ lệ và cắt phần dư."
         }
     }
 
