@@ -1,4 +1,3 @@
-
 import SwiftUI
 import Security
 
@@ -6,23 +5,12 @@ struct ContentView: View {
     @StateObject private var transport = RootRemoteTransport()
     @StateObject private var video = VideoStreamClient()
 
-    @AppStorage("rootremote.host")
-    private var savedHost = "192.168.1.10"
-
-    @AppStorage("rootremote.controlPort")
-    private var savedControlPort = "28741"
-
-    @AppStorage("rootremote.videoPort")
-    private var savedVideoPort = "28742"
-
-    @AppStorage("rootremote.audioEnabled")
-    private var audioEnabled = false
-
-    @AppStorage("rootremote.videoQuality")
-    private var videoQuality = "720p"
-
-    @AppStorage("rootremote.displayMode")
-    private var displayMode = "fit"
+    @AppStorage("rootremote.host") private var savedHost = "192.168.1.10"
+    @AppStorage("rootremote.controlPort") private var savedControlPort = "28741"
+    @AppStorage("rootremote.videoPort") private var savedVideoPort = "28742"
+    @AppStorage("rootremote.audioEnabled") private var audioEnabled = false
+    @AppStorage("rootremote.videoQuality") private var videoQuality = "720p"
+    @AppStorage("rootremote.displayMode") private var displayMode = "fillCrop"
 
     @State private var password = ""
     @State private var isConnecting = false
@@ -111,12 +99,9 @@ struct ContentView: View {
                             Image(systemName: "lock.fill")
                                 .foregroundStyle(.cyan)
 
-                            SecureField(
-                                "Mật khẩu kết nối",
-                                text: $password
-                            )
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
+                            SecureField("Mật khẩu kết nối", text: $password)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
                         }
                         .padding(15)
                         .background(.white.opacity(0.07))
@@ -130,10 +115,7 @@ struct ContentView: View {
                         Text(errorMessage)
                             .font(.footnote)
                             .foregroundStyle(.red)
-                            .frame(
-                                maxWidth: .infinity,
-                                alignment: .leading
-                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     if isConnecting {
@@ -149,13 +131,8 @@ struct ContentView: View {
                     Button(action: connect) {
                         HStack(spacing: 10) {
                             Image(systemName: "bolt.fill")
-
-                            Text(
-                                isConnecting
-                                    ? "Đang kết nối..."
-                                    : "Kết nối Android"
-                            )
-                            .fontWeight(.semibold)
+                            Text(isConnecting ? "Đang kết nối..." : "Kết nối Android")
+                                .fontWeight(.semibold)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(17)
@@ -166,13 +143,10 @@ struct ContentView: View {
                     .disabled(isConnecting)
                     .opacity(isConnecting ? 0.65 : 1)
 
-                    Text(
-                        "Nhập Managed IP của Android trong ZeroTier. " +
-                        "Mật khẩu được lưu trong Keychain."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.45))
-                    .multilineTextAlignment(.center)
+                    Text("Nhập Managed IP của Android trong ZeroTier. Mật khẩu được lưu trong Keychain.")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.45))
+                        .multilineTextAlignment(.center)
 
                     Spacer(minLength: 30)
                 }
@@ -211,9 +185,7 @@ struct ContentView: View {
     }
 
     private func connect() {
-        let host = savedHost.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        )
+        let host = savedHost.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !host.isEmpty,
               !password.isEmpty,
@@ -229,17 +201,8 @@ struct ContentView: View {
         isConnecting = true
         PasswordStore.save(password)
 
-        transport.connect(
-            host: host,
-            port: control,
-            token: password
-        )
-
-        video.connect(
-            host: host,
-            port: videoPort,
-            token: password
-        )
+        transport.connect(host: host, port: control, token: password)
+        video.connect(host: host, port: videoPort, token: password)
     }
 
     private func sendAudioSetting(_ enabled: Bool) {
@@ -266,8 +229,7 @@ private struct RemoteScreen: View {
     @Binding var videoQuality: String
     @Binding var displayMode: String
 
-    @AppStorage("rootremote.audioEnabled")
-    private var audioEnabled = false
+    @AppStorage("rootremote.audioEnabled") private var audioEnabled = false
 
     @State private var showSettings = false
     @State private var showFloatingMenu = false
@@ -279,6 +241,7 @@ private struct RemoteScreen: View {
     @State private var hasInitialBubblePosition = false
 
     private let bubbleSize: CGFloat = 42
+    private let dragThreshold: CGFloat = 10
 
     private var targetResolution: (width: Int, height: Int) {
         let portrait = video.height >= video.width
@@ -302,32 +265,39 @@ private struct RemoteScreen: View {
                     .ignoresSafeArea()
 
                 if let image = video.image {
-                    let sourceW = CGFloat(max(video.width, 1))
-                    let sourceH = CGFloat(max(video.height, 1))
+                    let sourceW = CGFloat(
+                        max(image.cgImage?.width ?? video.width, 1)
+                    )
+                    let sourceH = CGFloat(
+                        max(image.cgImage?.height ?? video.height, 1)
+                    )
 
-                    let scale: CGFloat = {
-                        switch displayMode {
-                        case "stretch":
-                            return 1
-                        case "fillCrop":
-                            return max(
-                                viewport.width / sourceW,
-                                viewport.height / sourceH
-                            )
-                        default:
-                            return viewport.width / sourceW
-                        }
-                    }()
+                    let fitScale = viewport.width / sourceW
 
-                    let drawnW: CGFloat =
-                        displayMode == "stretch"
-                        ? viewport.width
-                        : sourceW * scale
+                    let fillScale = max(
+                        viewport.width / sourceW,
+                        viewport.height / sourceH
+                    )
 
-                    let drawnH: CGFloat =
-                        displayMode == "stretch"
-                        ? viewport.height
-                        : sourceH * scale
+                    let drawnW: CGFloat
+                    let drawnH: CGFloat
+
+                    switch displayMode {
+                    case "fit":
+                        // Khớp toàn bộ chiều rộng, giữ nguyên tỷ lệ.
+                        drawnW = viewport.width
+                        drawnH = sourceH * fitScale
+
+                    case "stretch":
+                        // Giữ chế độ kéo giãn toàn màn hình.
+                        drawnW = viewport.width
+                        drawnH = viewport.height
+
+                    default:
+                        // Giữ chế độ lấp đầy và cắt hình cũ.
+                        drawnW = sourceW * fillScale
+                        drawnH = sourceH * fillScale
+                    }
 
                     let imageRect = CGRect(
                         x: (viewport.width - drawnW) / 2,
@@ -336,19 +306,27 @@ private struct RemoteScreen: View {
                         height: drawnH
                     )
 
-                    Image(uiImage: image)
-                        .resizable()
-                        .interpolation(.high)
-                        .frame(width: drawnW, height: drawnH)
-                        .position(
-                            x: viewport.width / 2,
-                            y: viewport.height / 2
-                        )
-                        .frame(
-                            width: viewport.width,
-                            height: viewport.height
-                        )
-                        .clipped()
+                    ZStack {
+                        Color.black
+
+                        Image(uiImage: image)
+                            .resizable()
+                            .interpolation(.high)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(
+                                width: drawnW,
+                                height: drawnH
+                            )
+                            .position(
+                                x: viewport.width / 2,
+                                y: viewport.height / 2
+                            )
+                    }
+                    .frame(
+                        width: viewport.width,
+                        height: viewport.height
+                    )
+                    .clipped()
 
                     Color.clear
                         .contentShape(Rectangle())
@@ -377,6 +355,7 @@ private struct RemoteScreen: View {
                         )
                 }
 
+                // Giữ nguyên bong bóng thao tác.
                 floatingBubble(in: viewport)
                     .zIndex(10)
             }
@@ -403,10 +382,7 @@ private struct RemoteScreen: View {
                 Button(role: .destructive) {
                     onDisconnect()
                 } label: {
-                    Label(
-                        "Thoát kết nối",
-                        systemImage: "xmark.circle.fill"
-                    )
+                    Label("Thoát kết nối", systemImage: "xmark.circle.fill")
                 }
 
                 Button("Hủy", role: .cancel) {}
@@ -419,6 +395,7 @@ private struct RemoteScreen: View {
         }
     }
 
+    // Chạm nhanh mở menu; kéo chỉ di chuyển bong bóng.
     private func floatingBubble(in viewport: CGSize) -> some View {
         let x = hasInitialBubblePosition
             ? bubblePosition.x
@@ -428,77 +405,70 @@ private struct RemoteScreen: View {
             ? bubblePosition.y
             : viewport.height * 0.55
 
-        return Button {
-            showFloatingMenu = true
-        } label: {
-            Image(systemName: "gearshape.fill")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: bubbleSize, height: bubbleSize)
-                .background {
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .overlay {
-                            Circle()
-                                .fill(Color.cyan.opacity(0.28))
-                        }
-                        .overlay {
-                            Circle()
-                                .stroke(
-                                    .white.opacity(0.55),
-                                    lineWidth: 1
-                                )
-                        }
-                }
-                .shadow(
-                    color: .black.opacity(0.35),
-                    radius: 6,
-                    y: 2
+        return Image(systemName: "gearshape.fill")
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: bubbleSize, height: bubbleSize)
+            .background {
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .overlay {
+                        Circle().fill(Color.cyan.opacity(0.28))
+                    }
+                    .overlay {
+                        Circle().stroke(.white.opacity(0.55), lineWidth: 1)
+                    }
+            }
+            .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+            .contentShape(Circle())
+            .position(x: x, y: y)
+            .highPriorityGesture(
+                DragGesture(
+                    minimumDistance: 0,
+                    coordinateSpace: .named("remoteScreen")
                 )
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .position(x: x, y: y)
-        .simultaneousGesture(
-            DragGesture(
-                minimumDistance: 10,
-                coordinateSpace: .named("remoteScreen")
+                .onChanged { value in
+                    if !hasInitialBubblePosition {
+                        setInitialBubblePosition(in: viewport)
+                    }
+
+                    if bubbleDragStart == nil {
+                        bubbleDragStart = bubblePosition
+                    }
+
+                    guard let start = bubbleDragStart else { return }
+
+                    let distance = hypot(
+                        value.translation.width,
+                        value.translation.height
+                    )
+
+                    if distance >= dragThreshold {
+                        bubblePosition = clamp(
+                            CGPoint(
+                                x: start.x + value.translation.width,
+                                y: start.y + value.translation.height
+                            ),
+                            in: viewport
+                        )
+                    }
+                }
+                .onEnded { value in
+                    let distance = hypot(
+                        value.translation.width,
+                        value.translation.height
+                    )
+
+                    if distance >= dragThreshold {
+                        snapBubbleToNearestSide(in: viewport)
+                    } else {
+                        showFloatingMenu = true
+                    }
+
+                    bubbleDragStart = nil
+                }
             )
-            .onChanged { value in
-                if !hasInitialBubblePosition {
-                    setInitialBubblePosition(in: viewport)
-                }
-
-                if bubbleDragStart == nil {
-                    bubbleDragStart = bubblePosition
-                }
-
-                guard let start = bubbleDragStart else {
-                    return
-                }
-
-                bubblePosition = clamp(
-                    CGPoint(
-                        x: start.x + value.translation.width,
-                        y: start.y + value.translation.height
-                    ),
-                    in: viewport
-                )
-            }
-            .onEnded { value in
-                let distance = hypot(
-                    value.translation.width,
-                    value.translation.height
-                )
-
-                bubbleDragStart = nil
-
-                if distance >= 10 {
-                    snapBubbleToNearestSide(in: viewport)
-                }
-            }
-        )
-        .accessibilityLabel("Mở menu RootRemote")
+            .accessibilityLabel("Mở menu RootRemote")
     }
 
     private func setInitialBubblePosition(in size: CGSize) {
@@ -508,7 +478,6 @@ private struct RemoteScreen: View {
             x: size.width - bubbleSize / 2 - 16,
             y: size.height * 0.55
         )
-
         hasInitialBubblePosition = true
     }
 
@@ -517,10 +486,7 @@ private struct RemoteScreen: View {
         bubblePosition = clamp(bubblePosition, in: size)
     }
 
-    private func clamp(
-        _ point: CGPoint,
-        in size: CGSize
-    ) -> CGPoint {
+    private func clamp(_ point: CGPoint, in size: CGSize) -> CGPoint {
         CGPoint(
             x: min(
                 max(point.x, bubbleSize / 2 + 4),
@@ -535,16 +501,17 @@ private struct RemoteScreen: View {
 
     private func snapBubbleToNearestSide(in size: CGSize) {
         let current = clamp(bubblePosition, in: size)
-
         let leftX = bubbleSize / 2 + 8
         let rightX = size.width - bubbleSize / 2 - 8
 
-        bubblePosition = CGPoint(
-            x: abs(current.x - leftX) < abs(current.x - rightX)
-                ? leftX
-                : rightX,
-            y: current.y
-        )
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+            bubblePosition = CGPoint(
+                x: abs(current.x - leftX) < abs(current.x - rightX)
+                    ? leftX
+                    : rightX,
+                y: current.y
+            )
+        }
     }
 
     private var settingsSheet: some View {
@@ -575,14 +542,12 @@ private struct RemoteScreen: View {
                             if isApplyingResolution {
                                 ProgressView()
                             }
-
                             Text("Áp dụng độ phân giải")
                                 .fontWeight(.semibold)
                         }
                     }
                     .disabled(
-                        isApplyingResolution ||
-                        !transport.isAuthenticated
+                        isApplyingResolution || !transport.isAuthenticated
                     )
 
                     if !resolutionMessage.isEmpty {
@@ -591,19 +556,16 @@ private struct RemoteScreen: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    Text(
-                        "Android cần hỗ trợ yêu cầu này và phát lại luồng " +
-                        "video ở kích thước mới."
-                    )
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    Text("Android cần hỗ trợ yêu cầu này và phát lại luồng video ở kích thước mới.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Hiển thị màn hình") {
                     Picker("Chế độ hiển thị", selection: $displayMode) {
-                        Text("Lấp đầy, cắt mép").tag("fillCrop")
+                        Text("Lấp đầy màn hình").tag("fillCrop")
+                        Text("Vừa màn hình, giữ nguyên tỉ lệ").tag("fit")
                         Text("Kéo giãn toàn màn hình").tag("stretch")
-                        Text("Giữ tỉ lệ, vừa chiều rộng").tag("fit")
                     }
                     .pickerStyle(.inline)
 
@@ -621,12 +583,9 @@ private struct RemoteScreen: View {
                         onAudioChanged(enabled)
                     }
 
-                    Text(
-                        "Chức năng này cần module Android hỗ trợ thu và " +
-                        "truyền âm thanh."
-                    )
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    Text("Chức năng này cần module Android hỗ trợ thu và truyền âm thanh.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Kết nối") {
@@ -651,20 +610,19 @@ private struct RemoteScreen: View {
         switch displayMode {
         case "stretch":
             return "Video phủ kín màn hình nhưng hình ảnh có thể bị méo."
-        case "fillCrop":
-            return "Video phủ kín màn hình; phần vượt khỏi mép bị cắt."
+
+        case "fit":
+            return "Video khớp chiều rộng màn hình, giữ nguyên tỷ lệ và không cắt nội dung. Phần dư phía trên và dưới sẽ là viền đen."
+
         default:
-            return "Video vừa chiều rộng iPhone, giữ tỉ lệ gốc. " +
-                   "Có thể có khoảng trống phía trên và dưới."
+            return "Lấp đầy màn hình theo chế độ cũ."
         }
     }
 
     private func applyVideoResolution() {
         let resolution = targetResolution
-
         isApplyingResolution = true
-        resolutionMessage =
-            "Đã gửi yêu cầu \(resolution.width) × \(resolution.height)."
+        resolutionMessage = "Đã gửi yêu cầu \(resolution.width) × \(resolution.height)."
 
         transport.send([
             "type": "settings",
@@ -677,11 +635,10 @@ private struct RemoteScreen: View {
             isApplyingResolution = false
 
             if video.width == resolution.width &&
-               video.height == resolution.height {
+                video.height == resolution.height {
                 resolutionMessage = "Luồng video đã dùng độ phân giải mới."
             } else {
-                resolutionMessage =
-                    "Chưa thấy độ phân giải mới. Cần kiểm tra module Android."
+                resolutionMessage = "Chưa thấy độ phân giải mới. Cần kiểm tra module Android."
             }
         }
     }
@@ -702,6 +659,7 @@ private struct RemoteScreen: View {
             let px = point.x - imageRect.minX
             let py = point.y - imageRect.minY
 
+            // Không gửi thao tác khi chạm vào vùng viền đen.
             guard px >= 0,
                   py >= 0,
                   px < imageRect.width,
@@ -712,7 +670,6 @@ private struct RemoteScreen: View {
             let x = Int(
                 px / imageRect.width * CGFloat(video.width)
             )
-
             let y = Int(
                 py / imageRect.height * CGFloat(video.height)
             )
@@ -757,9 +714,7 @@ private enum PasswordStore {
     private static let account = "android-password"
 
     static func save(_ password: String) {
-        guard let data = password.data(using: .utf8) else {
-            return
-        }
+        guard let data = password.data(using: .utf8) else { return }
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -787,18 +742,11 @@ private enum PasswordStore {
         ]
 
         var result: CFTypeRef?
-
-        let status = SecItemCopyMatching(
-            query as CFDictionary,
-            &result
-        )
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
 
         guard status == errSecSuccess,
               let data = result as? Data,
-              let password = String(
-                data: data,
-                encoding: .utf8
-              ) else {
+              let password = String(data: data, encoding: .utf8) else {
             return ""
         }
 
