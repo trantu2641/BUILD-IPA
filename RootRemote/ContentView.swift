@@ -18,6 +18,12 @@ struct ContentView: View {
     @AppStorage("rootremote.audioEnabled")
     private var audioEnabled = false
 
+    @AppStorage("rootremote.videoQuality")
+    private var videoQuality = "720p"
+
+    @AppStorage("rootremote.displayMode")
+    private var displayMode = "blackBars"
+
     @State private var password = ""
     @State private var isConnecting = false
     @State private var errorMessage = ""
@@ -29,7 +35,9 @@ struct ContentView: View {
                     video: video,
                     transport: transport,
                     onDisconnect: disconnect,
-                    onAudioChanged: sendAudioSetting
+                    onAudioChanged: sendAudioSetting,
+                    videoQuality: $videoQuality,
+                    displayMode: $displayMode
                 )
             } else {
                 connectionScreen
@@ -138,6 +146,7 @@ struct ContentView: View {
                     Button(action: connect) {
                         HStack(spacing: 10) {
                             Image(systemName: "bolt.fill")
+
                             Text(
                                 isConnecting
                                     ? "Đang kết nối..."
@@ -232,7 +241,6 @@ struct ContentView: View {
     }
 
     private func sendAudioSetting(_ enabled: Bool) {
-        // Android Agent hiện tại chưa triển khai truyền âm thanh thực tế.
         transport.send([
             "type": "audio",
             "action": enabled ? "start" : "stop"
@@ -253,10 +261,24 @@ private struct RemoteScreen: View {
     let onDisconnect: () -> Void
     let onAudioChanged: (Bool) -> Void
 
+    @Binding var videoQuality: String
+    @Binding var displayMode: String
+
     @AppStorage("rootremote.audioEnabled")
     private var audioEnabled = false
 
     @State private var showSettings = false
+
+    private var targetResolution: (width: Int, height: Int) {
+        switch videoQuality {
+        case "480p":
+            return (854, 480)
+        case "1080p":
+            return (1920, 1080)
+        default:
+            return (1280, 720)
+        }
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -270,16 +292,16 @@ private struct RemoteScreen: View {
                     let sourceW = CGFloat(max(video.width, 1))
                     let sourceH = CGFloat(max(video.height, 1))
 
-                    let scale = min(
-                        viewport.width / sourceW,
-                        viewport.height / sourceH
-                    )
+                    // Luôn dùng toàn bộ chiều rộng màn hình iPhone.
+                    let drawnW = viewport.width
 
-                    let drawnW = sourceW * scale
-                    let drawnH = sourceH * scale
+                    // blackBars giữ tỉ lệ; stretch lấp đầy cả khung.
+                    let drawnH: CGFloat = displayMode == "stretch"
+                        ? viewport.height
+                        : viewport.width * sourceH / sourceW
 
                     let imageRect = CGRect(
-                        x: (viewport.width - drawnW) / 2,
+                        x: 0,
                         y: (viewport.height - drawnH) / 2,
                         width: drawnW,
                         height: drawnH
@@ -288,13 +310,11 @@ private struct RemoteScreen: View {
                     Image(uiImage: image)
                         .resizable()
                         .interpolation(.high)
-                        .aspectRatio(
-                            contentMode: .fit
-                        )
                         .frame(
                             width: drawnW,
                             height: drawnH
                         )
+                        .clipped()
                         .position(
                             x: viewport.width / 2,
                             y: viewport.height / 2
@@ -356,12 +376,7 @@ private struct RemoteScreen: View {
                             showSettings = true
                         } label: {
                             Image(systemName: "gearshape.fill")
-                                .font(
-                                    .system(
-                                        size: 16,
-                                        weight: .semibold
-                                    )
-                                )
+                                .font(.system(size: 16, weight: .semibold))
                                 .foregroundStyle(.white)
                                 .frame(width: 42, height: 42)
                                 .background(.black.opacity(0.65))
@@ -371,12 +386,7 @@ private struct RemoteScreen: View {
 
                         Button(action: onDisconnect) {
                             Image(systemName: "xmark")
-                                .font(
-                                    .system(
-                                        size: 16,
-                                        weight: .bold
-                                    )
-                                )
+                                .font(.system(size: 16, weight: .bold))
                                 .foregroundStyle(.white)
                                 .frame(width: 42, height: 42)
                                 .background(.black.opacity(0.65))
@@ -394,21 +404,55 @@ private struct RemoteScreen: View {
                 width: viewport.width,
                 height: viewport.height
             )
+            .clipped()
         }
         .ignoresSafeArea()
         .statusBarHidden(true)
         .sheet(isPresented: $showSettings) {
             NavigationStack {
                 Form {
-                    Section("Luồng video") {
+                    Section("Chất lượng hình ảnh") {
+                        Picker("Độ phân giải", selection: $videoQuality) {
+                            Text("480p • Nhẹ").tag("480p")
+                            Text("720p • Cân bằng").tag("720p")
+                            Text("1080p • Nét cao").tag("1080p")
+                        }
+                        .pickerStyle(.inline)
+
                         LabeledContent(
-                            "Kích thước từ Android",
+                            "Độ phân giải yêu cầu",
+                            value: "\(targetResolution.width) × \(targetResolution.height)"
+                        )
+
+                        LabeledContent(
+                            "Độ phân giải đang nhận",
                             value: "\(video.width) × \(video.height)"
                         )
 
                         Text(
-                            "Ứng dụng không tự thay đổi độ phân giải " +
-                            "Android khi kết nối."
+                            "Độ phân giải yêu cầu chỉ có hiệu lực khi " +
+                            "Android agent hỗ trợ đổi kích thước luồng video."
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                        Button("Áp dụng độ phân giải") {
+                            applyVideoResolution()
+                        }
+                    }
+
+                    Section("Tỉ lệ hiển thị") {
+                        Picker("Chế độ", selection: $displayMode) {
+                            Text("Kéo dài toàn màn hình").tag("stretch")
+                            Text("Giữ tỉ lệ, nền đen").tag("blackBars")
+                        }
+                        .pickerStyle(.inline)
+
+                        Text(
+                            displayMode == "stretch"
+                            ? "Ảnh phủ kín màn hình. Hình ảnh có thể bị méo."
+                            : "Ảnh giữ nguyên tỉ lệ, chiều rộng vừa màn hình. " +
+                              "Có thể xuất hiện nền đen ở phía trên hoặc dưới."
                         )
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -424,8 +468,8 @@ private struct RemoteScreen: View {
                         }
 
                         Text(
-                            "Tùy chọn này chỉ gửi yêu cầu. Agent Android " +
-                            "cần có bộ thu và truyền âm thanh thực tế."
+                            "Âm thanh chỉ hoạt động khi Android agent có " +
+                            "chức năng thu và truyền âm thanh thực tế."
                         )
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -450,6 +494,17 @@ private struct RemoteScreen: View {
         }
     }
 
+    private func applyVideoResolution() {
+        let resolution = targetResolution
+
+        transport.send([
+            "type": "settings",
+            "action": "video",
+            "width": resolution.width,
+            "height": resolution.height
+        ])
+    }
+
     private func sendGesture(
         _ value: DragGesture.Value,
         imageRect: CGRect
@@ -466,6 +521,7 @@ private struct RemoteScreen: View {
             let px = point.x - imageRect.minX
             let py = point.y - imageRect.minY
 
+            // Không gửi chạm ở vùng nền đen.
             guard px >= 0,
                   py >= 0,
                   px < imageRect.width,
@@ -473,27 +529,17 @@ private struct RemoteScreen: View {
                 return nil
             }
 
+            let x = Int(
+                px / imageRect.width * CGFloat(video.width)
+            )
+
+            let y = Int(
+                py / imageRect.height * CGFloat(video.height)
+            )
+
             return (
-                x: min(
-                    video.width - 1,
-                    max(
-                        0,
-                        Int(
-                            px / imageRect.width *
-                            CGFloat(video.width)
-                        )
-                    )
-                ),
-                y: min(
-                    video.height - 1,
-                    max(
-                        0,
-                        Int(
-                            py / imageRect.height *
-                            CGFloat(video.height)
-                        )
-                    )
-                )
+                x: min(video.width - 1, max(0, x)),
+                y: min(video.height - 1, max(0, y))
             )
         }
 
@@ -502,13 +548,8 @@ private struct RemoteScreen: View {
             return
         }
 
-        let dx = abs(
-            value.location.x - value.startLocation.x
-        )
-
-        let dy = abs(
-            value.location.y - value.startLocation.y
-        )
+        let dx = abs(value.location.x - value.startLocation.x)
+        let dy = abs(value.location.y - value.startLocation.y)
 
         if dx < 8 && dy < 8 {
             transport.send([
@@ -566,7 +607,6 @@ private enum PasswordStore {
         ]
 
         var result: CFTypeRef?
-
         let status = SecItemCopyMatching(
             query as CFDictionary,
             &result
@@ -574,10 +614,7 @@ private enum PasswordStore {
 
         guard status == errSecSuccess,
               let data = result as? Data,
-              let password = String(
-                data: data,
-                encoding: .utf8
-              ) else {
+              let password = String(data: data, encoding: .utf8) else {
             return ""
         }
 
