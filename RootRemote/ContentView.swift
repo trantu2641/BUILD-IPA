@@ -224,7 +224,6 @@ struct ContentView: View {
 
         errorMessage = ""
         isConnecting = true
-
         PasswordStore.save(password)
 
         transport.connect(
@@ -268,8 +267,14 @@ private struct RemoteScreen: View {
     private var audioEnabled = false
 
     @State private var showSettings = false
+    @State private var showFloatingMenu = false
     @State private var isApplyingResolution = false
     @State private var resolutionMessage = ""
+
+    @State private var bubblePosition = CGPoint(x: 0, y: 0)
+    @State private var hasInitialBubblePosition = false
+
+    private let bubbleSize: CGFloat = 54
 
     private var targetResolution: (width: Int, height: Int) {
         let portrait = video.height >= video.width
@@ -288,7 +293,7 @@ private struct RemoteScreen: View {
         GeometryReader { geometry in
             let viewport = geometry.size
 
-            ZStack {
+            ZStack(alignment: .topLeading) {
                 Color.black
                     .ignoresSafeArea()
 
@@ -296,8 +301,6 @@ private struct RemoteScreen: View {
                     let sourceW = CGFloat(max(video.width, 1))
                     let sourceH = CGFloat(max(video.height, 1))
 
-                    // Chế độ fit luôn vừa chiều rộng iPhone.
-                    // Stretch lấp cả khung; fillCrop lấp khung và cắt mép.
                     let scale: CGFloat = {
                         switch displayMode {
                         case "stretch":
@@ -362,75 +365,151 @@ private struct RemoteScreen: View {
                             }
                         )
                 } else {
-                    VStack(spacing: 14) {
-                        ProgressView()
-                            .tint(.cyan)
-
-                        Text("Đang nhận màn hình Android...")
-                            .foregroundStyle(.white)
-
-                        Text(video.status)
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.65))
-                    }
-                }
-
-                VStack {
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(
-                                video.image == nil
-                                    ? Color.orange
-                                    : Color.green
-                            )
-                            .frame(width: 8, height: 8)
-
-                        Text(
-                            video.image == nil
-                                ? "Đang kết nối"
-                                : "Đang điều khiển"
+                    ProgressView()
+                        .tint(.cyan)
+                        .frame(
+                            width: viewport.width,
+                            height: viewport.height
                         )
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.white)
-
-                        Spacer()
-
-                        Button {
-                            showSettings = true
-                        } label: {
-                            Image(systemName: "gearshape.fill")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 42, height: 42)
-                                .background(.black.opacity(0.72))
-                                .clipShape(Circle())
-                        }
-                        .accessibilityLabel("Cài đặt")
-
-                        Button(action: onDisconnect) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 42, height: 42)
-                                .background(.black.opacity(0.72))
-                                .clipShape(Circle())
-                        }
-                        .accessibilityLabel("Ngắt kết nối")
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
-
-                    Spacer()
                 }
+
+                // Một bong bóng nổi duy nhất trong chế độ điều khiển.
+                floatingBubble(in: viewport)
             }
             .frame(width: viewport.width, height: viewport.height)
             .clipped()
+            .onAppear {
+                setInitialBubblePosition(in: viewport)
+            }
+            .onChange(of: viewport) { newSize in
+                clampBubblePosition(in: newSize)
+            }
+            .confirmationDialog(
+                "RootRemote",
+                isPresented: $showFloatingMenu,
+                titleVisibility: .visible
+            ) {
+                Button("Cài đặt", systemImage: "gearshape.fill") {
+                    showSettings = true
+                }
+
+                Button("Thoát kết nối", systemImage: "xmark.circle.fill", role: .destructive) {
+                    onDisconnect()
+                }
+
+                Button("Hủy", role: .cancel) {}
+            }
         }
         .ignoresSafeArea()
         .statusBarHidden(true)
         .sheet(isPresented: $showSettings) {
             settingsSheet
         }
+    }
+
+    private func floatingBubble(in viewport: CGSize) -> some View {
+        let x = hasInitialBubblePosition
+            ? bubblePosition.x
+            : viewport.width - bubbleSize / 2 - 18
+
+        let y = hasInitialBubblePosition
+            ? bubblePosition.y
+            : viewport.height * 0.5
+
+        return Image(systemName: "ellipsis")
+            .font(.system(size: 23, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: bubbleSize, height: bubbleSize)
+            .background {
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .overlay {
+                        Circle()
+                            .fill(Color.cyan.opacity(0.28))
+                    }
+                    .overlay {
+                        Circle()
+                            .stroke(.white.opacity(0.55), lineWidth: 1)
+                    }
+            }
+            .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+            .contentShape(Circle())
+            .position(x: x, y: y)
+            .gesture(
+                DragGesture(minimumDistance: 4)
+                    .onChanged { value in
+                        if !hasInitialBubblePosition {
+                            setInitialBubblePosition(in: viewport)
+                        }
+
+                        bubblePosition = clamp(
+                            CGPoint(
+                                x: value.location.x,
+                                y: value.location.y
+                            ),
+                            in: viewport
+                        )
+                    }
+                    .onEnded { value in
+                        let distance = hypot(
+                            value.translation.width,
+                            value.translation.height
+                        )
+
+                        if distance < 8 {
+                            showFloatingMenu = true
+                        } else {
+                            snapBubbleToNearestSide(in: viewport)
+                        }
+                    }
+            )
+            .accessibilityLabel("Mở menu RootRemote")
+    }
+
+    private func setInitialBubblePosition(in size: CGSize) {
+        guard !hasInitialBubblePosition else { return }
+
+        bubblePosition = CGPoint(
+            x: size.width - bubbleSize / 2 - 16,
+            y: size.height * 0.55
+        )
+
+        hasInitialBubblePosition = true
+    }
+
+    private func clampBubblePosition(in size: CGSize) {
+        guard hasInitialBubblePosition else { return }
+        bubblePosition = clamp(bubblePosition, in: size)
+    }
+
+    private func clamp(
+        _ point: CGPoint,
+        in size: CGSize
+    ) -> CGPoint {
+        CGPoint(
+            x: min(
+                max(point.x, bubbleSize / 2 + 4),
+                size.width - bubbleSize / 2 - 4
+            ),
+            y: min(
+                max(point.y, bubbleSize / 2 + 8),
+                size.height - bubbleSize / 2 - 8
+            )
+        )
+    }
+
+    private func snapBubbleToNearestSide(in size: CGSize) {
+        let current = clamp(bubblePosition, in: size)
+
+        let leftX = bubbleSize / 2 + 8
+        let rightX = size.width - bubbleSize / 2 - 8
+
+        bubblePosition = CGPoint(
+            x: abs(current.x - leftX) < abs(current.x - rightX)
+                ? leftX
+                : rightX,
+            y: current.y
+        )
     }
 
     private var settingsSheet: some View {
@@ -478,8 +557,8 @@ private struct RemoteScreen: View {
                     }
 
                     Text(
-                        "Android cần xử lý yêu cầu và phát lại luồng video " +
-                        "ở kích thước mới thì độ phân giải mới có hiệu lực."
+                        "Android cần hỗ trợ yêu cầu này và phát lại luồng " +
+                        "video ở kích thước mới."
                     )
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -487,7 +566,7 @@ private struct RemoteScreen: View {
 
                 Section("Hiển thị màn hình") {
                     Picker("Chế độ hiển thị", selection: $displayMode) {
-                        Text("Lấp đầy màn hình, cắt mép").tag("fillCrop")
+                        Text("Lấp đầy, cắt mép").tag("fillCrop")
                         Text("Kéo giãn toàn màn hình").tag("stretch")
                         Text("Giữ tỉ lệ, vừa chiều rộng").tag("fit")
                     }
@@ -508,19 +587,19 @@ private struct RemoteScreen: View {
                     }
 
                     Text(
-                        "Âm thanh chỉ hoạt động khi module Android " +
-                        "có chức năng thu và truyền âm thanh."
+                        "Chức năng này cần module Android hỗ trợ thu và " +
+                        "truyền âm thanh."
                     )
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 }
 
-                Section("Trạng thái kết nối") {
+                Section("Kết nối") {
                     LabeledContent("Điều khiển", value: transport.status)
                     LabeledContent("Video", value: video.status)
                 }
             }
-            .navigationTitle("Cài đặt RootRemote")
+            .navigationTitle("Cài đặt")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -538,10 +617,10 @@ private struct RemoteScreen: View {
         case "stretch":
             return "Video phủ kín màn hình nhưng hình ảnh có thể bị méo."
         case "fillCrop":
-            return "Video phủ kín màn hình; phần vượt khỏi mép sẽ bị cắt."
+            return "Video phủ kín màn hình; phần vượt khỏi mép bị cắt."
         default:
-            return "Video vừa toàn bộ chiều rộng iPhone, giữ tỉ lệ gốc. " +
-                   "Khoảng trống có thể xuất hiện phía trên và dưới."
+            return "Video vừa chiều rộng iPhone, giữ tỉ lệ gốc. " +
+                   "Có thể có khoảng trống phía trên và dưới."
         }
     }
 
@@ -567,8 +646,7 @@ private struct RemoteScreen: View {
                 resolutionMessage = "Luồng video đã dùng độ phân giải mới."
             } else {
                 resolutionMessage =
-                    "Chưa thấy độ phân giải mới trong luồng video. " +
-                    "Cần kiểm tra module Magisk phía Android."
+                    "Chưa thấy độ phân giải mới. Cần kiểm tra module Android."
             }
         }
     }
@@ -674,6 +752,7 @@ private enum PasswordStore {
         ]
 
         var result: CFTypeRef?
+
         let status = SecItemCopyMatching(
             query as CFDictionary,
             &result
