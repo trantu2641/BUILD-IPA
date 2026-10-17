@@ -232,6 +232,8 @@ private struct RemoteScreen: View {
     @Binding var displayMode: String
 
     @AppStorage("rootremote.audioEnabled") private var audioEnabled = false
+    @AppStorage("rootremote.videoFPS") private var videoFPS = 30
+    @AppStorage("rootremote.videoCodec") private var videoCodec = "auto"
 
     @State private var showSettings = false
     @State private var showFloatingMenu = false
@@ -267,12 +269,16 @@ private struct RemoteScreen: View {
                     .ignoresSafeArea()
 
                 if let image = video.image {
-                    let sourceW = CGFloat(
-                        max(image.cgImage?.width ?? video.width, 1)
-                    )
-                    let sourceH = CGFloat(
-                        max(image.cgImage?.height ?? video.height, 1)
-                    )
+                    // Dùng kích thước khung hình của luồng trước; UIImage có thể
+                    // mang scale/size hiển thị khác với độ phân giải thực.
+                    let sourceW = CGFloat(max(
+                        video.width > 0 ? video.width : (image.cgImage?.width ?? Int(image.size.width)),
+                        1
+                    ))
+                    let sourceH = CGFloat(max(
+                        video.height > 0 ? video.height : (image.cgImage?.height ?? Int(image.size.height)),
+                        1
+                    ))
 
                     let fitScale = viewport.width / sourceW
 
@@ -315,7 +321,9 @@ private struct RemoteScreen: View {
                         Image(uiImage: image)
                             .resizable()
                             .interpolation(.high)
-                            .aspectRatio(contentMode: .fit)
+                            // drawnW/drawnH đã được tính theo chế độ hiển thị.
+                            // Không dùng thêm aspectRatio(.fit), vì nó có thể
+                            // thu ảnh lần nữa trong một số bố cục SwiftUI.
                             .frame(
                                 width: drawnW,
                                 height: drawnH
@@ -559,7 +567,29 @@ private struct RemoteScreen: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    Text("Android cần hỗ trợ yêu cầu này và phát lại luồng video ở kích thước mới.")
+                    Picker("Tốc độ khung hình", selection: $videoFPS) {
+                        Text("30 FPS • Tiết kiệm").tag(30)
+                        Text("45 FPS • Mượt").tag(45)
+                        Text("60 FPS • Rất mượt").tag(60)
+                    }
+                    .pickerStyle(.segmented)
+
+                    Picker("Bộ mã hóa video", selection: $videoCodec) {
+                        Text("Tự động").tag("auto")
+                        Text("H.264 / AVC").tag("h264")
+                        Text("H.265 / HEVC").tag("hevc")
+                    }
+                    .pickerStyle(.inline)
+
+                    Button {
+                        applyVideoSettings()
+                    } label: {
+                        Label("Áp dụng cấu hình video", systemImage: "video.badge.gearshape")
+                            .fontWeight(.semibold)
+                    }
+                    .disabled(!transport.isAuthenticated)
+
+                    Text("FPS và bộ mã hóa là cấu hình yêu cầu gửi sang Android. Module Android phải hỗ trợ FPS/bộ mã hóa đã chọn; Tự động cho phép Android chọn định dạng phù hợp, không ép H.264.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -620,6 +650,20 @@ private struct RemoteScreen: View {
         default:
             return "Lấp đầy màn hình theo chế độ cũ."
         }
+    }
+
+    private func applyVideoSettings() {
+        let resolution = targetResolution
+        transport.send([
+            "type": "settings",
+            "action": "video",
+            "width": resolution.width,
+            "height": resolution.height,
+            "fps": videoFPS,
+            "codec": videoCodec,
+            "mode": "custom"
+        ])
+        resolutionMessage = "Đã gửi cấu hình: \(resolution.width) × \(resolution.height), \(videoFPS) FPS, codec \(videoCodec.uppercased()). Android cần hỗ trợ các tùy chọn này."
     }
 
     private func applyVideoResolution() {
