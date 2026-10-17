@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var token = ""
     @State private var x = "500"
     @State private var y = "800"
+    @State private var showFullScreen = false
 
     var body: some View {
         NavigationView {
@@ -59,6 +60,7 @@ struct ContentView: View {
                         guard let p = UInt16(videoPort),
                               !host.isEmpty,
                               !token.isEmpty else {
+                            video.statusMessageInvalidInput()
                             return
                         }
 
@@ -89,45 +91,10 @@ struct ContentView: View {
                                 .gesture(
                                     DragGesture(minimumDistance: 0)
                                         .onEnded { value in
-                                            guard transport.isAuthenticated,
-                                                  let start = androidPoint(
-                                                    value.startLocation,
-                                                    in: geometry.size
-                                                  ),
-                                                  let end = androidPoint(
-                                                    value.location,
-                                                    in: geometry.size
-                                                  ) else {
-                                                return
-                                            }
-
-                                            let dx = abs(
-                                                value.location.x -
-                                                value.startLocation.x
+                                            sendGesture(
+                                                value,
+                                                size: geometry.size
                                             )
-                                            let dy = abs(
-                                                value.location.y -
-                                                value.startLocation.y
-                                            )
-
-                                            if dx < 8 && dy < 8 {
-                                                transport.send([
-                                                    "type": "input",
-                                                    "action": "tap",
-                                                    "x": end.x,
-                                                    "y": end.y
-                                                ])
-                                            } else {
-                                                transport.send([
-                                                    "type": "input",
-                                                    "action": "swipe",
-                                                    "x1": start.x,
-                                                    "y1": start.y,
-                                                    "x2": end.x,
-                                                    "y2": end.y,
-                                                    "duration_ms": 250
-                                                ])
-                                            }
                                         }
                                 )
                         }
@@ -143,6 +110,17 @@ struct ContentView: View {
                                     .foregroundColor(.secondary)
                             }
                     }
+
+                    Button {
+                        showFullScreen = true
+                    } label: {
+                        Label(
+                            "Toàn màn hình",
+                            systemImage:
+                                "arrow.up.left.and.arrow.down.right"
+                        )
+                    }
+                    .disabled(video.image == nil)
                 }
 
                 Section("Kiểm tra") {
@@ -180,20 +158,12 @@ struct ContentView: View {
                     .disabled(!transport.isAuthenticated)
 
                     Button("Back") {
-                        transport.send([
-                            "type": "input",
-                            "action": "key",
-                            "key": "BACK"
-                        ])
+                        sendKey("BACK")
                     }
                     .disabled(!transport.isAuthenticated)
 
                     Button("Home") {
-                        transport.send([
-                            "type": "input",
-                            "action": "key",
-                            "key": "HOME"
-                        ])
+                        sendKey("HOME")
                     }
                     .disabled(!transport.isAuthenticated)
                 }
@@ -215,11 +185,65 @@ struct ContentView: View {
             }
             .navigationTitle("RootRemote")
         }
+        .fullScreenCover(isPresented: $showFullScreen) {
+            FullScreenAndroidView(
+                video: video,
+                transport: transport,
+                onClose: {
+                    showFullScreen = false
+                }
+            )
+        }
+    }
+
+    private func sendKey(_ key: String) {
+        transport.send([
+            "type": "input",
+            "action": "key",
+            "key": key
+        ])
+    }
+
+    private func sendGesture(
+        _ value: DragGesture.Value,
+        size: CGSize
+    ) {
+        guard transport.isAuthenticated,
+              let start = androidPoint(value.startLocation, size: size),
+              let end = androidPoint(value.location, size: size) else {
+            return
+        }
+
+        let dx = abs(
+            value.location.x - value.startLocation.x
+        )
+        let dy = abs(
+            value.location.y - value.startLocation.y
+        )
+
+        if dx < 8 && dy < 8 {
+            transport.send([
+                "type": "input",
+                "action": "tap",
+                "x": end.x,
+                "y": end.y
+            ])
+        } else {
+            transport.send([
+                "type": "input",
+                "action": "swipe",
+                "x1": start.x,
+                "y1": start.y,
+                "x2": end.x,
+                "y2": end.y,
+                "duration_ms": 250
+            ])
+        }
     }
 
     private func androidPoint(
         _ point: CGPoint,
-        in size: CGSize
+        size: CGSize
     ) -> (x: Int, y: Int)? {
         guard video.width > 0,
               video.height > 0,
@@ -230,6 +254,7 @@ struct ContentView: View {
 
         let sourceWidth = CGFloat(video.width)
         let sourceHeight = CGFloat(video.height)
+
         let scale = min(
             size.width / sourceWidth,
             size.height / sourceHeight
@@ -237,6 +262,207 @@ struct ContentView: View {
 
         let renderedWidth = sourceWidth * scale
         let renderedHeight = sourceHeight * scale
+
+        let offsetX = (size.width - renderedWidth) / 2
+        let offsetY = (size.height - renderedHeight) / 2
+
+        let px = (point.x - offsetX) / scale
+        let py = (point.y - offsetY) / scale
+
+        guard px >= 0,
+              py >= 0,
+              px < sourceWidth,
+              py < sourceHeight else {
+            return nil
+        }
+
+        return (Int(px), Int(py))
+    }
+}
+
+private struct FullScreenAndroidView: View {
+    @ObservedObject var video: VideoStreamClient
+    @ObservedObject var transport: RootRemoteTransport
+
+    let onClose: () -> Void
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Color.black
+                    .ignoresSafeArea()
+
+                if let image = video.image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(
+                            width: geometry.size.width,
+                            height: geometry.size.height
+                        )
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onEnded { value in
+                                    sendGesture(
+                                        value,
+                                        size: geometry.size
+                                    )
+                                }
+                        )
+                } else {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .tint(.white)
+
+                        Text("Đang chờ hình ảnh Android…")
+                            .foregroundColor(.white)
+                    }
+                }
+
+                VStack {
+                    HStack {
+                        Button(action: onClose) {
+                            Label(
+                                "Đóng",
+                                systemImage: "xmark"
+                            )
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 9)
+                            .background(Color.black.opacity(0.75))
+                            .clipShape(Capsule())
+                        }
+
+                        Spacer()
+
+                        Text(video.status)
+                            .font(.caption)
+                            .lineLimit(2)
+                            .padding(8)
+                            .background(Color.black.opacity(0.75))
+                            .clipShape(Capsule())
+                    }
+
+                    Spacer()
+
+                    HStack(spacing: 28) {
+                        Button {
+                            sendKey("BACK")
+                        } label: {
+                            Label(
+                                "Back",
+                                systemImage: "chevron.left"
+                            )
+                        }
+                        .disabled(!transport.isAuthenticated)
+
+                        Button {
+                            sendKey("HOME")
+                        } label: {
+                            Label(
+                                "Home",
+                                systemImage: "house"
+                            )
+                        }
+                        .disabled(!transport.isAuthenticated)
+                    }
+                    .font(.headline)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 13)
+                    .background(Color.black.opacity(0.8))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.gray.opacity(0.7))
+                .foregroundColor(.white)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 20)
+            }
+            .frame(
+                width: geometry.size.width,
+                height: geometry.size.height
+            )
+            .background(Color.black)
+        }
+        .ignoresSafeArea()
+        .preferredColorScheme(.dark)
+        .statusBarHidden(true)
+    }
+
+    private func sendKey(_ key: String) {
+        transport.send([
+            "type": "input",
+            "action": "key",
+            "key": key
+        ])
+    }
+
+    private func sendGesture(
+        _ value: DragGesture.Value,
+        size: CGSize
+    ) {
+        guard transport.isAuthenticated,
+              let start = androidPoint(
+                value.startLocation,
+                size: size
+              ),
+              let end = androidPoint(
+                value.location,
+                size: size
+              ) else {
+            return
+        }
+
+        let dx = abs(
+            value.location.x - value.startLocation.x
+        )
+        let dy = abs(
+            value.location.y - value.startLocation.y
+        )
+
+        if dx < 8 && dy < 8 {
+            transport.send([
+                "type": "input",
+                "action": "tap",
+                "x": end.x,
+                "y": end.y
+            ])
+        } else {
+            transport.send([
+                "type": "input",
+                "action": "swipe",
+                "x1": start.x,
+                "y1": start.y,
+                "x2": end.x,
+                "y2": end.y,
+                "duration_ms": 250
+            ])
+        }
+    }
+
+    private func androidPoint(
+        _ point: CGPoint,
+        size: CGSize
+    ) -> (x: Int, y: Int)? {
+        guard video.width > 0,
+              video.height > 0,
+              size.width > 0,
+              size.height > 0 else {
+            return nil
+        }
+
+        let sourceWidth = CGFloat(video.width)
+        let sourceHeight = CGFloat(video.height)
+
+        let scale = min(
+            size.width / sourceWidth,
+            size.height / sourceHeight
+        )
+
+        let renderedWidth = sourceWidth * scale
+        let renderedHeight = sourceHeight * scale
+
         let offsetX = (size.width - renderedWidth) / 2
         let offsetY = (size.height - renderedHeight) / 2
 
