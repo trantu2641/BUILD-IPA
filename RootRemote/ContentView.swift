@@ -265,91 +265,98 @@ private struct RemoteScreen: View {
                 Color.black
                     .ignoresSafeArea()
 
-                if let image = video.image {
-                    let sourceW = CGFloat(
-                        max(image.cgImage?.width ?? video.width, 1)
-                    )
-                    let sourceH = CGFloat(
-                        max(image.cgImage?.height ?? video.height, 1)
-                    )
+if let image = video.image {
+    let sourceW = CGFloat(
+        max(image.cgImage?.width ?? video.width, 1)
+    )
+    let sourceH = CGFloat(
+        max(image.cgImage?.height ?? video.height, 1)
+    )
 
-                    // Chỉ chế độ "fit" được thay đổi:
-                    // khớp chiều rộng, giữ tỷ lệ, không cắt hình.
-                    // Chế độ full và stretch giữ nguyên cách tính cũ.
-                    let scale: CGFloat = {
-                        switch displayMode {
-                        case "fit":
-                            return viewport.width / sourceW
+    let fitScale = viewport.width / sourceW
 
-                        case "stretch":
-                            return 1
+    let fillScale = max(
+        viewport.width / sourceW,
+        viewport.height / sourceH
+    )
 
-                        default:
-                            return max(
-                                viewport.width / sourceW,
-                                viewport.height / sourceH
-                            )
-                        }
-                    }()
+    let drawnW: CGFloat
+    let drawnH: CGFloat
 
-                    let drawnW: CGFloat = {
-                        if displayMode == "stretch" {
-                            return viewport.width
-                        }
-                        return sourceW * scale
-                    }()
+    switch displayMode {
+    case "fit":
+        // Khớp toàn bộ chiều rộng, giữ nguyên tỷ lệ.
+        drawnW = viewport.width
+        drawnH = sourceH * fitScale
 
-                    let drawnH: CGFloat = {
-                        if displayMode == "stretch" {
-                            return viewport.height
-                        }
-                        return sourceH * scale
-                    }()
+    case "stretch":
+        // Giữ nguyên chế độ kéo giãn cũ.
+        drawnW = viewport.width
+        drawnH = viewport.height
 
-                    let imageRect = CGRect(
-                        x: (viewport.width - drawnW) / 2,
-                        y: (viewport.height - drawnH) / 2,
-                        width: drawnW,
-                        height: drawnH
-                    )
+    default:
+        // Giữ nguyên chế độ lấp đầy và cắt hình cũ.
+        drawnW = sourceW * fillScale
+        drawnH = sourceH * fillScale
+    }
 
-                    Image(uiImage: image)
-                        .resizable()
-                        .interpolation(.high)
-                        .frame(width: drawnW, height: drawnH)
-                        .position(
-                            x: viewport.width / 2,
-                            y: viewport.height / 2
-                        )
-                        .frame(
-                            width: viewport.width,
-                            height: viewport.height
-                        )
-                        .clipped()
+    let imageRect = CGRect(
+        x: (viewport.width - drawnW) / 2,
+        y: (viewport.height - drawnH) / 2,
+        width: drawnW,
+        height: drawnH
+    )
 
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .frame(
-                            width: viewport.width,
-                            height: viewport.height
-                        )
-                        .gesture(
-                            DragGesture(
-                                minimumDistance: 0,
-                                coordinateSpace: .local
-                            )
-                            .onEnded { value in
-                                sendGesture(value, imageRect: imageRect)
-                            }
-                        )
-                } else {
-                    ProgressView()
-                        .tint(.cyan)
-                        .frame(
-                            width: viewport.width,
-                            height: viewport.height
-                        )
-                }
+    ZStack {
+        Color.black
+
+        Image(uiImage: image)
+            .resizable()
+            .interpolation(.high)
+            .aspectRatio(
+                contentMode: .fit
+            )
+            .frame(
+                width: drawnW,
+                height: drawnH
+            )
+            .position(
+                x: viewport.width / 2,
+                y: viewport.height / 2
+            )
+    }
+    .frame(
+        width: viewport.width,
+        height: viewport.height
+    )
+    .clipped()
+
+    Color.clear
+        .contentShape(Rectangle())
+        .frame(
+            width: viewport.width,
+            height: viewport.height
+        )
+        .gesture(
+            DragGesture(
+                minimumDistance: 0,
+                coordinateSpace: .local
+            )
+            .onEnded { value in
+                sendGesture(
+                    value,
+                    imageRect: imageRect
+                )
+            }
+        )
+} else {
+    ProgressView()
+        .tint(.cyan)
+        .frame(
+            width: viewport.width,
+            height: viewport.height
+        )
+}
 
                 // Giữ nguyên bong bóng thao tác đang hoạt động.
                 floatingBubble(in: viewport)
