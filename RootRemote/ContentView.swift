@@ -568,11 +568,14 @@ private struct RemoteScreen: View {
                     }
 
                     Picker("Tốc độ khung hình", selection: $videoFPS) {
-                        Text("30 FPS • Tiết kiệm").tag(30)
-                        Text("45 FPS • Mượt").tag(45)
-                        Text("60 FPS • Rất mượt").tag(60)
+                        Text("15 FPS").tag(15)
+                        Text("20 FPS").tag(20)
+                        Text("25 FPS").tag(25)
+                        Text("30 FPS").tag(30)
+                        Text("45 FPS").tag(45)
+                        Text("60 FPS").tag(60)
                     }
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.menu)
 
                     Picker("Bộ mã hóa video", selection: $videoCodec) {
                         Text("Tự động").tag("auto")
@@ -589,7 +592,7 @@ private struct RemoteScreen: View {
                     }
                     .disabled(!transport.isAuthenticated)
 
-                    Text("FPS và bộ mã hóa là cấu hình yêu cầu gửi sang Android. Module Android phải hỗ trợ FPS/bộ mã hóa đã chọn; Tự động cho phép Android chọn định dạng phù hợp, không ép H.264.")
+                    Text("Module hiện tại dùng H.264 để tương thích bộ giải mã video hiện có. H.265/HEVC chưa hoạt động cho đến khi VideoStreamClient được sửa để giải mã HEVC. FPS thực tế còn phụ thuộc khả năng của screenrecord trên Android.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -616,7 +619,7 @@ private struct RemoteScreen: View {
                         onAudioChanged(enabled)
                     }
 
-                    Text("Chức năng này cần module Android hỗ trợ thu và truyền âm thanh.")
+                    Text("Âm thanh chưa hoạt động trong bản hiện tại. Cần bộ thu/mã hóa âm thanh Android và bộ nhận/giải mã tương ứng trong IPA.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
