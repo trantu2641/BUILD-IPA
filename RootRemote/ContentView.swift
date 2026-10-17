@@ -71,17 +71,29 @@ struct ContentView: View {
                     }
 
                     VStack(spacing: 16) {
-                        field("Địa chỉ ZeroTier của Android", text: $savedHost, icon: "network")
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.URL)
+                        field(
+                            "Địa chỉ ZeroTier của Android",
+                            text: $savedHost,
+                            icon: "network"
+                        )
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
 
                         HStack(spacing: 12) {
-                            field("Cổng điều khiển", text: $savedControlPort, icon: "slider.horizontal.3")
-                                .keyboardType(.numberPad)
+                            field(
+                                "Cổng điều khiển",
+                                text: $savedControlPort,
+                                icon: "slider.horizontal.3"
+                            )
+                            .keyboardType(.numberPad)
 
-                            field("Cổng video", text: $savedVideoPort, icon: "video")
-                                .keyboardType(.numberPad)
+                            field(
+                                "Cổng video",
+                                text: $savedVideoPort,
+                                icon: "video"
+                            )
+                            .keyboardType(.numberPad)
                         }
 
                         HStack(spacing: 10) {
@@ -108,7 +120,8 @@ struct ContentView: View {
                     }
 
                     if isConnecting {
-                        ProgressView().tint(.cyan)
+                        ProgressView()
+                            .tint(.cyan)
 
                         Text(transport.status + "\n" + video.status)
                             .font(.footnote)
@@ -145,7 +158,11 @@ struct ContentView: View {
         }
     }
 
-    private func field(_ title: String, text: Binding<String>, icon: String) -> some View {
+    private func field(
+        _ title: String,
+        text: Binding<String>,
+        icon: String
+    ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.caption)
@@ -245,26 +262,54 @@ private struct RemoteScreen: View {
             let viewport = geometry.size
 
             ZStack(alignment: .topLeading) {
-                Color.black.ignoresSafeArea()
+                Color.black
+                    .ignoresSafeArea()
 
                 if let image = video.image {
-                    let sourceW = CGFloat(max(video.width, 1))
-                    let sourceH = CGFloat(max(video.height, 1))
+                    // Ưu tiên kích thước pixel thực của ảnh đã giải mã.
+                    // Nếu không có CGImage thì dùng kích thước luồng video.
+                    let sourceW = CGFloat(
+                        max(image.cgImage?.width ?? video.width, 1)
+                    )
+                    let sourceH = CGFloat(
+                        max(image.cgImage?.height ?? video.height, 1)
+                    )
 
+                    // Chế độ mặc định: khớp chiều rộng, giữ nguyên tỷ lệ.
+                    // Chế độ fit: hiện toàn bộ ảnh trong vùng nhìn.
+                    // Chế độ stretch: kéo ảnh phủ toàn màn hình.
                     let scale: CGFloat = {
                         switch displayMode {
                         case "stretch":
                             return 1
+
                         case "fit":
-                            return min(viewport.width / sourceW, viewport.height / sourceH)
+                            return min(
+                                viewport.width / sourceW,
+                                viewport.height / sourceH
+                            )
+
                         default:
-                            return max(viewport.width / sourceW, viewport.height / sourceH)
+                            return viewport.width / sourceW
                         }
                     }()
 
-                    let drawnW = displayMode == "stretch" ? viewport.width : sourceW * scale
-                    let drawnH = displayMode == "stretch" ? viewport.height : sourceH * scale
+                    let drawnW: CGFloat = {
+                        if displayMode == "stretch" {
+                            return viewport.width
+                        }
+                        return sourceW * scale
+                    }()
 
+                    let drawnH: CGFloat = {
+                        if displayMode == "stretch" {
+                            return viewport.height
+                        }
+                        return sourceH * scale
+                    }()
+
+                    // Vị trí và kích thước ảnh thực tế trên màn hình.
+                    // Các thao tác chạm bên ngoài vùng ảnh sẽ bị bỏ qua.
                     let imageRect = CGRect(
                         x: (viewport.width - drawnW) / 2,
                         y: (viewport.height - drawnH) / 2,
@@ -276,25 +321,41 @@ private struct RemoteScreen: View {
                         .resizable()
                         .interpolation(.high)
                         .frame(width: drawnW, height: drawnH)
-                        .position(x: viewport.width / 2, y: viewport.height / 2)
-                        .frame(width: viewport.width, height: viewport.height)
+                        .position(
+                            x: viewport.width / 2,
+                            y: viewport.height / 2
+                        )
+                        .frame(
+                            width: viewport.width,
+                            height: viewport.height
+                        )
                         .clipped()
 
                     Color.clear
                         .contentShape(Rectangle())
-                        .frame(width: viewport.width, height: viewport.height)
+                        .frame(
+                            width: viewport.width,
+                            height: viewport.height
+                        )
                         .gesture(
-                            DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                                .onEnded { value in
-                                    sendGesture(value, imageRect: imageRect)
-                                }
+                            DragGesture(
+                                minimumDistance: 0,
+                                coordinateSpace: .local
+                            )
+                            .onEnded { value in
+                                sendGesture(value, imageRect: imageRect)
+                            }
                         )
                 } else {
                     ProgressView()
                         .tint(.cyan)
-                        .frame(width: viewport.width, height: viewport.height)
+                        .frame(
+                            width: viewport.width,
+                            height: viewport.height
+                        )
                 }
 
+                // Giữ nguyên bong bóng thao tác.
                 floatingBubble(in: viewport)
                     .zIndex(10)
             }
@@ -377,7 +438,10 @@ private struct RemoteScreen: View {
 
                     guard let start = bubbleDragStart else { return }
 
-                    let distance = hypot(value.translation.width, value.translation.height)
+                    let distance = hypot(
+                        value.translation.width,
+                        value.translation.height
+                    )
 
                     if distance >= dragThreshold {
                         bubblePosition = clamp(
@@ -390,7 +454,10 @@ private struct RemoteScreen: View {
                     }
                 }
                 .onEnded { value in
-                    let distance = hypot(value.translation.width, value.translation.height)
+                    let distance = hypot(
+                        value.translation.width,
+                        value.translation.height
+                    )
 
                     if distance >= dragThreshold {
                         snapBubbleToNearestSide(in: viewport)
@@ -421,8 +488,14 @@ private struct RemoteScreen: View {
 
     private func clamp(_ point: CGPoint, in size: CGSize) -> CGPoint {
         CGPoint(
-            x: min(max(point.x, bubbleSize / 2 + 4), size.width - bubbleSize / 2 - 4),
-            y: min(max(point.y, bubbleSize / 2 + 8), size.height - bubbleSize / 2 - 8)
+            x: min(
+                max(point.x, bubbleSize / 2 + 4),
+                size.width - bubbleSize / 2 - 4
+            ),
+            y: min(
+                max(point.y, bubbleSize / 2 + 8),
+                size.height - bubbleSize / 2 - 8
+            )
         )
     }
 
@@ -433,7 +506,9 @@ private struct RemoteScreen: View {
 
         withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
             bubblePosition = CGPoint(
-                x: abs(current.x - leftX) < abs(current.x - rightX) ? leftX : rightX,
+                x: abs(current.x - leftX) < abs(current.x - rightX)
+                    ? leftX
+                    : rightX,
                 y: current.y
             )
         }
@@ -467,10 +542,13 @@ private struct RemoteScreen: View {
                             if isApplyingResolution {
                                 ProgressView()
                             }
-                            Text("Áp dụng độ phân giải").fontWeight(.semibold)
+                            Text("Áp dụng độ phân giải")
+                                .fontWeight(.semibold)
                         }
                     }
-                    .disabled(isApplyingResolution || !transport.isAuthenticated)
+                    .disabled(
+                        isApplyingResolution || !transport.isAuthenticated
+                    )
 
                     if !resolutionMessage.isEmpty {
                         Text(resolutionMessage)
@@ -485,9 +563,14 @@ private struct RemoteScreen: View {
 
                 Section("Hiển thị màn hình") {
                     Picker("Chế độ hiển thị", selection: $displayMode) {
-                        Text("Lấp đầy màn hình").tag("fillCrop")
-                        Text("Vừa màn hình, giữ nguyên tỉ lệ").tag("fit")
-                        Text("Kéo giãn toàn màn hình").tag("stretch")
+                        Text("Khớp chiều rộng, giữ tỉ lệ")
+                            .tag("fillCrop")
+
+                        Text("Vừa màn hình, giữ nguyên tỉ lệ")
+                            .tag("fit")
+
+                        Text("Kéo giãn toàn màn hình")
+                            .tag("stretch")
                     }
                     .pickerStyle(.inline)
 
@@ -497,10 +580,13 @@ private struct RemoteScreen: View {
                 }
 
                 Section("Âm thanh") {
-                    Toggle("Yêu cầu âm thanh Android", isOn: $audioEnabled)
-                        .onChange(of: audioEnabled) { enabled in
-                            onAudioChanged(enabled)
-                        }
+                    Toggle(
+                        "Yêu cầu âm thanh Android",
+                        isOn: $audioEnabled
+                    )
+                    .onChange(of: audioEnabled) { enabled in
+                        onAudioChanged(enabled)
+                    }
 
                     Text("Chức năng này cần module Android hỗ trợ thu và truyền âm thanh.")
                         .font(.footnote)
@@ -529,10 +615,12 @@ private struct RemoteScreen: View {
         switch displayMode {
         case "stretch":
             return "Video phủ kín màn hình nhưng hình ảnh có thể bị méo."
+
         case "fit":
-            return "Hiện toàn bộ hình ảnh, có thể còn viền đen."
+            return "Hiện toàn bộ hình ảnh trong vùng màn hình; có thể có viền đen ở cạnh trái, phải hoặc trên, dưới."
+
         default:
-            return "Phóng video phủ kín màn hình, giữ tỉ lệ và cắt phần dư."
+            return "Video chạm sát hai mép trái và phải, giữ nguyên tỉ lệ. Nếu cần, viền đen chỉ xuất hiện phía trên và phía dưới."
         }
     }
 
@@ -551,7 +639,8 @@ private struct RemoteScreen: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             isApplyingResolution = false
 
-            if video.width == resolution.width && video.height == resolution.height {
+            if video.width == resolution.width &&
+                video.height == resolution.height {
                 resolutionMessage = "Luồng video đã dùng độ phân giải mới."
             } else {
                 resolutionMessage = "Chưa thấy độ phân giải mới. Cần kiểm tra module Android."
@@ -559,7 +648,10 @@ private struct RemoteScreen: View {
         }
     }
 
-    private func sendGesture(_ value: DragGesture.Value, imageRect: CGRect) {
+    private func sendGesture(
+        _ value: DragGesture.Value,
+        imageRect: CGRect
+    ) {
         guard transport.isAuthenticated,
               video.width > 0,
               video.height > 0,
@@ -572,13 +664,20 @@ private struct RemoteScreen: View {
             let px = point.x - imageRect.minX
             let py = point.y - imageRect.minY
 
-            guard px >= 0, py >= 0,
-                  px < imageRect.width, py < imageRect.height else {
+            // Không gửi thao tác khi chạm vào vùng viền đen.
+            guard px >= 0,
+                  py >= 0,
+                  px < imageRect.width,
+                  py < imageRect.height else {
                 return nil
             }
 
-            let x = Int(px / imageRect.width * CGFloat(video.width))
-            let y = Int(py / imageRect.height * CGFloat(video.height))
+            let x = Int(
+                px / imageRect.width * CGFloat(video.width)
+            )
+            let y = Int(
+                py / imageRect.height * CGFloat(video.height)
+            )
 
             return (
                 x: min(video.width - 1, max(0, x)),
