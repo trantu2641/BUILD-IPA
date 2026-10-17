@@ -1,1 +1,33 @@
-
+name: Build RootRemote IPA
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Xcode
+        run: xcodebuild -version
+      - name: Build unsigned app
+        run: |
+          set -euo pipefail
+          xcodebuild -project RootRemote.xcodeproj -scheme RootRemote -configuration Release -sdk iphoneos -derivedDataPath "$RUNNER_TEMP/DerivedData" IPHONEOS_DEPLOYMENT_TARGET=16.4 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/RootRemote.app"
+          test -d "$APP"
+          mkdir -p "$RUNNER_TEMP/package/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/package/Payload/RootRemote.app"
+          cd "$RUNNER_TEMP/package"
+          /usr/bin/zip -qry "$GITHUB_WORKSPACE/RootRemote-unsigned.ipa" Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RootRemote-unsigned-IPA
+          path: RootRemote-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
