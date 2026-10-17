@@ -22,7 +22,7 @@ struct ContentView: View {
     private var videoQuality = "720p"
 
     @AppStorage("rootremote.displayMode")
-    private var displayMode = "fillCrop"
+    private var displayMode = "fit"
 
     @State private var password = ""
     @State private var isConnecting = false
@@ -272,8 +272,6 @@ private struct RemoteScreen: View {
     @State private var resolutionMessage = ""
 
     private var targetResolution: (width: Int, height: Int) {
-        // Giữ hướng của luồng hiện tại, không mặc định Android
-        // luôn là màn hình ngang.
         let portrait = video.height >= video.width
 
         switch videoQuality {
@@ -298,22 +296,19 @@ private struct RemoteScreen: View {
                     let sourceW = CGFloat(max(video.width, 1))
                     let sourceH = CGFloat(max(video.height, 1))
 
+                    // Chế độ fit luôn vừa chiều rộng iPhone.
+                    // Stretch lấp cả khung; fillCrop lấp khung và cắt mép.
                     let scale: CGFloat = {
                         switch displayMode {
                         case "stretch":
                             return 1
-                        case "fit", "blackBars":
-                            return min(
-                                viewport.width / sourceW,
-                                viewport.height / sourceH
-                            )
-                        default:
-                            // fillCrop: lấp kín khung, chấp nhận cắt
-                            // phần ảnh vượt khỏi mép màn hình.
+                        case "fillCrop":
                             return max(
                                 viewport.width / sourceW,
                                 viewport.height / sourceH
                             )
+                        default:
+                            return viewport.width / sourceW
                         }
                     }()
 
@@ -348,8 +343,6 @@ private struct RemoteScreen: View {
                         )
                         .clipped()
 
-                    // Lớp nhận thao tác chạm nằm trên hình video.
-                    // Toạ độ được quy đổi về kích thước luồng Android.
                     Color.clear
                         .contentShape(Rectangle())
                         .frame(
@@ -382,8 +375,6 @@ private struct RemoteScreen: View {
                     }
                 }
 
-                // Thanh trạng thái phía trên, không chiếm chiều rộng
-                // của vùng video.
                 VStack {
                     HStack(spacing: 8) {
                         Circle()
@@ -475,7 +466,10 @@ private struct RemoteScreen: View {
                                 .fontWeight(.semibold)
                         }
                     }
-                    .disabled(isApplyingResolution || !transport.isAuthenticated)
+                    .disabled(
+                        isApplyingResolution ||
+                        !transport.isAuthenticated
+                    )
 
                     if !resolutionMessage.isEmpty {
                         Text(resolutionMessage)
@@ -484,8 +478,8 @@ private struct RemoteScreen: View {
                     }
 
                     Text(
-                        "Độ phân giải đang nhận chỉ thay đổi khi module Android " +
-                        "xử lý yêu cầu và phát lại luồng video ở kích thước mới."
+                        "Android cần xử lý yêu cầu và phát lại luồng video " +
+                        "ở kích thước mới thì độ phân giải mới có hiệu lực."
                     )
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -495,7 +489,7 @@ private struct RemoteScreen: View {
                     Picker("Chế độ hiển thị", selection: $displayMode) {
                         Text("Lấp đầy màn hình, cắt mép").tag("fillCrop")
                         Text("Kéo giãn toàn màn hình").tag("stretch")
-                        Text("Giữ tỉ lệ, có thể có viền").tag("fit")
+                        Text("Giữ tỉ lệ, vừa chiều rộng").tag("fit")
                     }
                     .pickerStyle(.inline)
 
@@ -514,8 +508,8 @@ private struct RemoteScreen: View {
                     }
 
                     Text(
-                        "Tuỳ chọn này chỉ hoạt động khi module Android " +
-                        "đã có chức năng thu và truyền âm thanh."
+                        "Âm thanh chỉ hoạt động khi module Android " +
+                        "có chức năng thu và truyền âm thanh."
                     )
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -542,11 +536,12 @@ private struct RemoteScreen: View {
     private var displayModeDescription: String {
         switch displayMode {
         case "stretch":
-            return "Ảnh phủ kín chiều rộng và chiều cao. Có thể bị méo tỉ lệ."
-        case "fit", "blackBars":
-            return "Hiển thị toàn bộ ảnh, giữ tỉ lệ gốc. Có thể xuất hiện viền đen."
+            return "Video phủ kín màn hình nhưng hình ảnh có thể bị méo."
+        case "fillCrop":
+            return "Video phủ kín màn hình; phần vượt khỏi mép sẽ bị cắt."
         default:
-            return "Ảnh phủ kín màn hình iPhone. Phần vượt khỏi mép sẽ bị cắt."
+            return "Video vừa toàn bộ chiều rộng iPhone, giữ tỉ lệ gốc. " +
+                   "Khoảng trống có thể xuất hiện phía trên và dưới."
         }
     }
 
@@ -554,7 +549,8 @@ private struct RemoteScreen: View {
         let resolution = targetResolution
 
         isApplyingResolution = true
-        resolutionMessage = "Đã gửi yêu cầu \(resolution.width) × \(resolution.height)."
+        resolutionMessage =
+            "Đã gửi yêu cầu \(resolution.width) × \(resolution.height)."
 
         transport.send([
             "type": "settings",
@@ -563,8 +559,6 @@ private struct RemoteScreen: View {
             "height": resolution.height
         ])
 
-        // Đây chỉ là thời gian chờ phản hồi để cập nhật giao diện,
-        // không khẳng định Android đã áp dụng thành công.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             isApplyingResolution = false
 
@@ -573,8 +567,8 @@ private struct RemoteScreen: View {
                 resolutionMessage = "Luồng video đã dùng độ phân giải mới."
             } else {
                 resolutionMessage =
-                    "Android chưa xác nhận độ phân giải mới. " +
-                    "Cần kiểm tra module Magisk và khởi động lại luồng video."
+                    "Chưa thấy độ phân giải mới trong luồng video. " +
+                    "Cần kiểm tra module Magisk phía Android."
             }
         }
     }
@@ -592,8 +586,6 @@ private struct RemoteScreen: View {
         }
 
         func map(_ point: CGPoint) -> (x: Int, y: Int)? {
-            // imageRect có thể vượt khỏi khung iPhone ở chế độ fillCrop.
-            // Tính theo ảnh đã phóng, không theo khung iPhone.
             let px = point.x - imageRect.minX
             let py = point.y - imageRect.minY
 
@@ -689,7 +681,10 @@ private enum PasswordStore {
 
         guard status == errSecSuccess,
               let data = result as? Data,
-              let password = String(data: data, encoding: .utf8) else {
+              let password = String(
+                data: data,
+                encoding: .utf8
+              ) else {
             return ""
         }
 
